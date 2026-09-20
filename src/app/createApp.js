@@ -2,23 +2,22 @@ import { Color, Scene, WebGLRenderer } from 'three';
 import { bindResize } from './resize.js';
 import { bindVisibility } from './visibility.js';
 import { createTopDownCamera } from '../render/camera.js';
-import { createTestPlane } from '../render/createTestPlane.js';
+import { COLOR_DEEP, createWaterMesh } from '../render/createWaterMesh.js';
 
 /**
- * Phase 0 bootstrap: scene, camera, renderer, plain test plane, loop.
- * No water shaders, interaction, or controls yet.
+ * Phase 1: calm full-screen water surface (layered sine displacement + cool tint).
+ * No interaction, Fresnel, refraction, caustics, or public controls.
  * @param {HTMLElement} root
  */
 export function createApp(root) {
-  // Match clear/background to the test plane so any sub-pixel gaps stay invisible.
-  const fieldColor = 0x0367A6;
+  const fieldColor = COLOR_DEEP.getHex();
 
   const scene = new Scene();
   scene.background = new Color(fieldColor);
 
   const camera = createTopDownCamera();
-  const plane = createTestPlane();
-  scene.add(plane);
+  const water = createWaterMesh();
+  scene.add(water);
 
   const renderer = new WebGLRenderer({
     antialias: true,
@@ -30,8 +29,15 @@ export function createApp(root) {
 
   let frameId = 0;
   let running = false;
+  let elapsed = 0;
+  let lastFrameTime = performance.now();
 
   const renderFrame = () => {
+    const now = performance.now();
+    elapsed += (now - lastFrameTime) * 0.001;
+    lastFrameTime = now;
+    water.material.uniforms.uTime.value = elapsed;
+
     renderer.render(scene, camera);
     frameId = requestAnimationFrame(renderFrame);
   };
@@ -40,6 +46,8 @@ export function createApp(root) {
     start() {
       if (running) return;
       running = true;
+      // Skip wall-clock gap while the tab was hidden so waves do not jump.
+      lastFrameTime = performance.now();
       frameId = requestAnimationFrame(renderFrame);
     },
     stop() {
@@ -49,9 +57,10 @@ export function createApp(root) {
     },
   };
 
-  // Keep the plane larger than the frustum so the darker clear color never shows as "borders".
+  // Cover the frustum; feed the same scale into the shader so waves stay isotropic in world space.
   bindResize(renderer, camera, () => {
-    plane.scale.set(camera.right, camera.top, 1);
+    water.scale.set(camera.right, camera.top, 1);
+    water.material.uniforms.uWorldScale.value.set(camera.right, camera.top);
   });
   bindVisibility(loop);
   loop.start();
@@ -60,12 +69,12 @@ export function createApp(root) {
     scene,
     camera,
     renderer,
-    plane,
+    water,
     dispose() {
       loop.stop();
       renderer.dispose();
-      plane.geometry.dispose();
-      plane.material.dispose();
+      water.geometry.dispose();
+      water.material.dispose();
       if (renderer.domElement.parentElement === root) {
         root.removeChild(renderer.domElement);
       }
