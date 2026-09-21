@@ -40,6 +40,7 @@ uniform float uNormalEps;
 varying float vHeight;
 varying float vNoiseVary;
 varying vec3 vNormal;
+varying vec3 vWorldPos;
 
 float wave(vec2 pos, vec2 dir, float frequency, float amplitude, float speed, float phase) {
   return amplitude * sin(dot(pos, dir) * frequency + uTime * speed + phase);
@@ -125,7 +126,7 @@ float surfaceNoiseVary(vec2 worldXY) {
 
 /**
  * Approximate surface normal from the height field via central differences.
- * Phase 3 will light with these; Phase 2 uses slope for color nuance only.
+ * Phase 3 lights with these; Phase 2 also used slope for color nuance.
  */
 vec3 surfaceNormal(vec2 worldXY) {
   float eps = uNormalEps;
@@ -143,6 +144,8 @@ void main() {
   vHeight = h;
   vNoiseVary = surfaceNoiseVary(worldXY);
   vNormal = surfaceNormal(worldXY);
+  // World-space position for view direction (mesh scale matches uWorldScale).
+  vWorldPos = vec3(worldXY, h);
 
   vec3 displaced = position;
   displaced.z += h;

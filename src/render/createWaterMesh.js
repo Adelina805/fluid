@@ -1,4 +1,4 @@
-import { Color, Mesh, PlaneGeometry, ShaderMaterial, Vector2 } from 'three';
+import { Color, Mesh, PlaneGeometry, ShaderMaterial, Vector2, Vector3 } from 'three';
 import vertexShader from '../shaders/water.vert.glsl?raw';
 import fragmentShader from '../shaders/water.frag.glsl?raw';
 
@@ -81,15 +81,47 @@ export const SLOPE_INFLUENCE = 1.7;
 /** How strongly independent noise reshapes color vs pure height. */
 export const NOISE_COLOR_INFLUENCE = 0.42;
 
+/**
+ * Phase 3 lighting — soft daylight Blinn-Phong (refined).
+ * Dual specular lobes + surface-tilt streak variation; Phase 2 displacement untouched.
+ */
+export const LIGHT = {
+  /** World-space direction from surface toward the light (slightly more angled for form). */
+  dir: new Vector3(0.48, 0.22, 0.84).normalize(),
+  /** Soft daylight tint (slightly warm so blues stay rich). */
+  color: new Color(0xe8f4ff),
+  /** Diffuse intensity — a touch more directional than the first pass. */
+  intensity: 0.78,
+  /** Ambient floor — lower than first pass so form reads; still never black. */
+  ambient: new Color(0x6a9eb0),
+  ambientStrength: 0.40,
+  /** Pale cyan specular tint (hottest hits push nearer white in-shader). */
+  specularColor: new Color(0xe2f6fb),
+  /** Broad soft lobe strength. */
+  specularStrength: 0.28,
+  /** Soft Blinn-Phong exponent — broad water sheen. */
+  shininess: 28.0,
+  /** Narrow lobe exponent — occasional concentrated glints. */
+  shininessNarrow: 72.0,
+  /** Narrow lobe strength — keep sparse; avoid chrome. */
+  specularNarrowStrength: 0.42,
+  /** Subtle top-down view lift (not Fresnel). */
+  viewBrightness: 0.10,
+  /** Soft caustic-like streak amount (still hint-level, not sharp webs). */
+  causticSoftStrength: 0.26,
+};
+
 /** Enough segments for soft sine displacement; not over-subdivided. */
 const SEGMENTS = 80;
 
 /**
- * Full-field water plane: layered sine + domain-warped noise, procedural normals,
- * and height/noise/slope cool tint (Phase 2).
+ * Full-field water plane: Phase 2 surface character + Phase 3 directional lighting.
  */
 export function createWaterMesh() {
   const geometry = new PlaneGeometry(2, 2, SEGMENTS, SEGMENTS);
+
+  const lightColor = LIGHT.color.clone().multiplyScalar(LIGHT.intensity);
+  const ambient = LIGHT.ambient.clone().multiplyScalar(LIGHT.ambientStrength);
 
   const material = new ShaderMaterial({
     vertexShader,
@@ -137,6 +169,19 @@ export function createWaterMesh() {
       uColorShallow: { value: COLOR_SHALLOW.clone() },
       uSlopeInfluence: { value: SLOPE_INFLUENCE },
       uNoiseColorInfluence: { value: NOISE_COLOR_INFLUENCE },
+
+      // Phase 3 lighting
+      uLightDir: { value: LIGHT.dir.clone() },
+      uLightColor: { value: lightColor },
+      uAmbient: { value: ambient },
+      uSpecularColor: { value: LIGHT.specularColor.clone() },
+      uSpecularStrength: { value: LIGHT.specularStrength },
+      uShininess: { value: LIGHT.shininess },
+      uShininessNarrow: { value: LIGHT.shininessNarrow },
+      uSpecularNarrowStrength: { value: LIGHT.specularNarrowStrength },
+      uCameraPosition: { value: new Vector3(0, 0, 2) },
+      uViewBrightness: { value: LIGHT.viewBrightness },
+      uCausticSoftStrength: { value: LIGHT.causticSoftStrength },
     },
   });
 

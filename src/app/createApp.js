@@ -5,8 +5,8 @@ import { createTopDownCamera } from '../render/camera.js';
 import { COLOR_DEEP, createWaterMesh } from '../render/createWaterMesh.js';
 
 /**
- * Phase 2: calm full-screen water (sine + subtle noise, procedural normals, height/slope tint).
- * No interaction, Fresnel, refraction, caustics, or public controls.
+ * Phase 3: calm full-screen water with directional Blinn-Phong lighting.
+ * No interaction, Fresnel, refraction, reflection maps, or public controls.
  * @param {HTMLElement} root
  */
 export function createApp(root) {
@@ -17,6 +17,8 @@ export function createApp(root) {
 
   const camera = createTopDownCamera();
   const water = createWaterMesh();
+  // Static top-down camera — feed once for view-dependent brightness / specular.
+  water.material.uniforms.uCameraPosition.value.copy(camera.position);
   scene.add(water);
 
   const renderer = new WebGLRenderer({
