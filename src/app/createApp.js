@@ -6,17 +6,21 @@ import { COLOR_DEEP, createWaterMesh } from '../render/createWaterMesh.js';
 import { MAX_RIPPLES, createPointerInteraction } from '../interaction/pointer.js';
 import {
   applyParams,
+  applyPublicControls,
   createParams,
+  createPublicControls,
   getInteractionScales,
 } from '../controls/params.js';
+import { createControlPanel } from '../controls/panel.js';
 
 /**
- * Phase 6 Stage A: calm water + pointer interaction + DEV-only Tweakpane.
- * No public panel yet. No GPGPU, hold effects, or settings persistence.
+ * Phase 6 Stage B: calm water + pointer interaction + public control panel.
+ * No settings persistence. No Tweakpane in production UI.
  * @param {HTMLElement} root
  */
 export function createApp(root) {
   const params = createParams();
+  const publicControls = createPublicControls();
   const fieldColor = COLOR_DEEP.getHex();
 
   const scene = new Scene();
@@ -37,9 +41,10 @@ export function createApp(root) {
   root.appendChild(renderer.domElement);
 
   const syncParams = () => {
+    applyPublicControls(publicControls, params);
     applyParams({ water, scene, renderer, params });
   };
-  // Seed uniforms from centralized params (must match Phase 5 defaults).
+  // Seed from public defaults → internal params (matches Stage A tuned baseline).
   syncParams();
 
   const pointer = createPointerInteraction({
@@ -121,17 +126,14 @@ export function createApp(root) {
   bindVisibility(loop);
   loop.start();
 
-  /** @type {{ dispose: () => void } | null} */
-  let devGui = null;
-  if (import.meta.env.DEV) {
-    // Dynamic import keeps Tweakpane out of production bundles.
-    import('../controls/devGui.js').then(({ createDevGui }) => {
-      devGui = createDevGui({
-        params,
-        onChange: syncParams,
-      });
-    });
-  }
+  const panel = createControlPanel({
+    root,
+    publicControls,
+    onChange: syncParams,
+    onUiEngage: (active) => {
+      pointer.setSuppressed(active);
+    },
+  });
 
   return {
     scene,
@@ -139,9 +141,10 @@ export function createApp(root) {
     renderer,
     water,
     params,
+    publicControls,
     dispose() {
       loop.stop();
-      devGui?.dispose();
+      panel.dispose();
       pointer.dispose();
       renderer.dispose();
       water.geometry.dispose();

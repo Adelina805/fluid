@@ -360,3 +360,140 @@ export const APPROVED_COLORS = {
   mid: COLOR_MID,
   shallow: COLOR_SHALLOW,
 };
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function inverseLerp(a, b, value) {
+  if (Math.abs(b - a) < 1e-8) return 0;
+  return (value - a) / (b - a);
+}
+
+function clamp01(t) {
+  return Math.min(1, Math.max(0, t));
+}
+
+/**
+ * Public Stage B axes (0–1 semantic sliders + hex).
+ * Defaults are inverse-mapped so the first paint matches PARAM_DEFAULTS.
+ *
+ * warm ↔ cool was rejected in Stage A and is intentionally omitted.
+ */
+export const PUBLIC_RANGES = Object.freeze({
+  calmRestless: { speedMin: 0.25, speedMax: 6, ampMin: 0.7, ampMax: 3.8 },
+  glassyTurbulent: {
+    turbMin: 0.35,
+    turbMax: 5,
+    distortMin: 0.12,
+    distortMax: 1.35,
+    narrowMin: 0.2,
+    narrowMax: 0.48,
+  },
+  light: { min: 0.2, max: 1.6 },
+});
+
+export const PUBLIC_DEFAULTS = Object.freeze({
+  /** 0 = calm · 1 = restless */
+  calmRestless: clamp01(
+    inverseLerp(
+      PUBLIC_RANGES.calmRestless.speedMin,
+      PUBLIC_RANGES.calmRestless.speedMax,
+      PARAM_DEFAULTS.motionSpeed,
+    ),
+  ),
+  /** 0 = glassy · 1 = turbulent */
+  glassyTurbulent: clamp01(
+    inverseLerp(
+      PUBLIC_RANGES.glassyTurbulent.turbMin,
+      PUBLIC_RANGES.glassyTurbulent.turbMax,
+      PARAM_DEFAULTS.turbulence,
+    ),
+  ),
+  /**
+   * 0 = reflective · 1 = translucent
+   * (inverts internal opticalBalance where 1 = reflective)
+   */
+  reflectiveTranslucent: clamp01(1 - PARAM_DEFAULTS.opticalBalance),
+  /** 0 = low · 1 = bright */
+  light: clamp01(
+    inverseLerp(PUBLIC_RANGES.light.min, PUBLIC_RANGES.light.max, PARAM_DEFAULTS.lightIntensity),
+  ),
+  colorHex: PARAM_DEFAULTS.baseHex,
+});
+
+/**
+ * @returns {typeof PUBLIC_DEFAULTS & { _lastValidHex: string }}
+ */
+export function createPublicControls() {
+  return {
+    ...PUBLIC_DEFAULTS,
+    _lastValidHex: PUBLIC_DEFAULTS.colorHex,
+  };
+}
+
+/**
+ * Map human-readable public controls onto internal params.
+ * Preserves non-exposed internals at PARAM_DEFAULTS.
+ *
+ * @param {ReturnType<typeof createPublicControls>} publicControls
+ * @param {ReturnType<typeof createParams>} params
+ */
+export function applyPublicControls(publicControls, params) {
+  const cr = clamp01(publicControls.calmRestless);
+  const gt = clamp01(publicControls.glassyTurbulent);
+  const rt = clamp01(publicControls.reflectiveTranslucent);
+  const li = clamp01(publicControls.light);
+
+  const { calmRestless: crR, glassyTurbulent: gtR, light: liR } = PUBLIC_RANGES;
+  const cr0 = PUBLIC_DEFAULTS.calmRestless;
+  const gt0 = PUBLIC_DEFAULTS.glassyTurbulent;
+  const li0 = PUBLIC_DEFAULTS.light;
+
+  /** Relative scale that equals 1 at the public default position. */
+  const rel = (t, t0, lo, hi) => lerp(lo, hi, t) / lerp(lo, hi, t0);
+
+  params.motionSpeed = lerp(crR.speedMin, crR.speedMax, cr);
+  params.motionAmplitude = lerp(crR.ampMin, crR.ampMax, cr);
+  params.pointerInfluence = rel(cr, cr0, 0.75, 1.35);
+  params.velocityResponse = rel(cr, cr0, 0.75, 1.4);
+  params.rippleStrength = rel(cr, cr0, 0.85, 1.35);
+
+  params.turbulence = lerp(gtR.turbMin, gtR.turbMax, gt);
+  params.distortionStrength = lerp(gtR.distortMin, gtR.distortMax, gt);
+  params.specularNarrowStrength = lerp(gtR.narrowMin, gtR.narrowMax, gt);
+
+  // Public 0 = reflective → opticalBalance 1; public 1 = translucent → 0.
+  params.opticalBalance = 1 - rt;
+  params.fresnelStrength = PARAM_DEFAULTS.fresnelStrength + (0.58 - rt) * 0.35;
+  params.colorDepthStrength =
+    PARAM_DEFAULTS.colorDepthStrength + (rt - 0.58) * 0.25;
+
+  params.lightIntensity = lerp(liR.min, liR.max, li);
+  params.specularStrength =
+    PARAM_DEFAULTS.specularStrength * rel(li, li0, 0.75, 1.35);
+  params.causticSoftStrength =
+    PARAM_DEFAULTS.causticSoftStrength * rel(li, li0, 0.7, 1.55);
+
+  // Keep highlight exponents at approved defaults (public UI does not expose them).
+  params.shininess = PARAM_DEFAULTS.shininess;
+  params.shininessNarrow = PARAM_DEFAULTS.shininessNarrow;
+  params.fresnelViewContrast = PARAM_DEFAULTS.fresnelViewContrast;
+
+  params.warmCool = 0;
+  params.depthMix = 1;
+
+  const parsed = parseHexColor(publicControls.colorHex);
+  if (parsed) {
+    publicControls._lastValidHex = parsed;
+    publicControls.colorHex = parsed;
+    params.baseHex = parsed;
+    params._lastValidHex = parsed;
+  } else {
+    // Invalid typing: keep last good palette; do not break the shader.
+    const fallback =
+      publicControls._lastValidHex || params._lastValidHex || PARAM_DEFAULTS.baseHex;
+    params.baseHex = fallback;
+    params._lastValidHex = fallback;
+  }
+}

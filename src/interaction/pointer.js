@@ -61,6 +61,8 @@ export function createPointerInteraction({ canvas, getWorldExtents, getInteracti
       : null;
 
   let reducedMotion = reducedMotionQuery?.matches ?? false;
+  /** When true, ignore pointer/touch so UI interaction does not disturb water. */
+  let suppressed = false;
 
   const onReducedMotionChange = (event) => {
     reducedMotion = event.matches;
@@ -143,6 +145,7 @@ export function createPointerInteraction({ canvas, getWorldExtents, getInteracti
   }
 
   function beginContact(clientX, clientY, id, source) {
+    if (suppressed) return;
     activePointerId = id;
     inputSource = source;
     pointerOver = true;
@@ -163,6 +166,7 @@ export function createPointerInteraction({ canvas, getWorldExtents, getInteracti
   }
 
   function moveContact(clientX, clientY) {
+    if (suppressed) return;
     pointerOver = true;
     const pos = clientToWorld(clientX, clientY);
     setWorldPosition(pos.x, pos.y);
@@ -192,7 +196,7 @@ export function createPointerInteraction({ canvas, getWorldExtents, getInteracti
   // --- Pointer Events (desktop + modern mobile) ---
 
   function onPointerDown(event) {
-    if (inputSource === 'touch') return;
+    if (suppressed || inputSource === 'touch') return;
     if (activePointerId !== null && event.pointerId !== activePointerId) {
       return;
     }
@@ -211,7 +215,7 @@ export function createPointerInteraction({ canvas, getWorldExtents, getInteracti
   }
 
   function onPointerMove(event) {
-    if (inputSource === 'touch') return;
+    if (suppressed || inputSource === 'touch') return;
 
     // Hover (mouse) without press, or the active captured pointer.
     if (event.pointerType === 'mouse' && activePointerId === null) {
@@ -270,6 +274,7 @@ export function createPointerInteraction({ canvas, getWorldExtents, getInteracti
   }
 
   function onPointerEnter(event) {
+    if (suppressed) return;
     if (event.pointerType === 'mouse' && !isDown) {
       pointerOver = true;
       const pos = clientToWorld(event.clientX, event.clientY);
@@ -289,7 +294,7 @@ export function createPointerInteraction({ canvas, getWorldExtents, getInteracti
   function onTouchStart(event) {
     // Always block browser gestures on the canvas (scroll/zoom/refresh).
     event.preventDefault();
-    if (inputSource === 'pointer') return;
+    if (suppressed || inputSource === 'pointer') return;
     if (event.touches.length === 0) return;
 
     // Single-touch only — ignore additional fingers.
@@ -453,9 +458,27 @@ export function createPointerInteraction({ canvas, getWorldExtents, getInteracti
     ripples.length = 0;
   }
 
+  /**
+   * Suppress water interaction while the control UI is being used.
+   * @param {boolean} value
+   */
+  function setSuppressed(value) {
+    suppressed = !!value;
+    if (suppressed) {
+      pointerOver = false;
+      isDown = false;
+      activePointerId = null;
+      inputSource = null;
+      hasPrevSample = false;
+      velocityX = 0;
+      velocityY = 0;
+    }
+  }
+
   return {
     update,
     getState,
+    setSuppressed,
     dispose,
     MAX_RIPPLES,
   };
