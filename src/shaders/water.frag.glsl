@@ -132,6 +132,10 @@ void main() {
     * uSpecularNarrowStrength
     * concentrate
     * structureGate;
+  // Default strength (0.24) keeps the original gate. Higher values open it
+  // so the narrow-specular slider is actually visible under top-down lighting.
+  float narrowOpen = clamp((uSpecularNarrowStrength - 0.24) * 0.22, 0.0, 0.82);
+  narrowSpec = mix(narrowSpec, pow(NdotH, uShininessNarrow) * uSpecularNarrowStrength * max(concentrate, 0.42), narrowOpen);
 
   float spec = (softSpec + narrowSpec) * specScale;
   float hot = smoothstep(0.12, 0.42, narrowSpec);

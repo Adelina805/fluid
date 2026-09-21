@@ -42,9 +42,9 @@ const _ambient = new Color();
  * (multipliers at 1; absolute values copied from createWaterMesh constants).
  */
 export const PARAM_DEFAULTS = Object.freeze({
-  // MOTION
-  motionSpeed: 1,
-  motionAmplitude: 1,
+  // MOTION — Stage A tuned defaults (user-approved feel: livelier baseline)
+  motionSpeed: 2.0,
+  motionAmplitude: 1.63,
   turbulence: 1,
 
   // OPTICS
@@ -65,7 +65,7 @@ export const PARAM_DEFAULTS = Object.freeze({
   // COLOR
   baseHex: '#2a7a9c',
   warmCool: 0,
-  /** 0 = flatter triad · 1 = approved depth separation · >1 = exaggerated. */
+  /** Internal triad separation — not exposed in Stage A (felt inert). */
   depthMix: 1,
 
   // INTERACTION
@@ -183,17 +183,23 @@ export function derivePalette(baseHex, warmCool = 0, depthMix = 1) {
   const rgb = hexToRgb(baseHex);
   const base = rgbToHsl(rgb.r, rgb.g, rgb.b);
 
-  // Warm pulls toward amber (~0.08); cool toward cyan (~0.52).
-  const warmTarget = 0.08;
-  const coolTarget = 0.52;
+  // Warm pulls toward amber; cool toward cyan.
+  // Stronger than the first Stage A pass so the axis is clearly readable.
+  const warmTarget = 0.07;
+  const coolTarget = 0.55;
   const t = clamp(warmCool, -1, 1);
   let hueShift = 0;
+  let satShift = 0;
+  let lightShift = 0;
   if (t < 0) {
-    // Blend base hue toward warm.
     const blend = -t;
-    hueShift = (warmTarget - base.h) * blend * 0.35;
+    hueShift = (warmTarget - base.h) * blend * 0.9;
+    satShift = 0.08 * blend;
+    lightShift = 0.05 * blend;
   } else if (t > 0) {
-    hueShift = (coolTarget - base.h) * t * 0.35;
+    hueShift = (coolTarget - base.h) * t * 0.9;
+    satShift = 0.06 * t;
+    lightShift = -0.04 * t;
   }
 
   const mix = clamp(depthMix, 0, 2);
@@ -202,9 +208,9 @@ export function derivePalette(baseHex, warmCool = 0, depthMix = 1) {
     const h = wrap01(base.h + offset.h * mix + hueShift);
     // Near-gray / near-black anchors: lift saturation so water structure reads.
     const satBoost = base.s < 0.15 ? (0.15 - base.s) * 0.8 : 0;
-    const s = clamp(base.s + offset.s * mix + satBoost, satFloor, satCeil);
+    const s = clamp(base.s + offset.s * mix + satBoost + satShift, satFloor, satCeil);
     // Preserve a readable lightness band even for extreme anchors.
-    const l = clamp(base.l + offset.l * mix, lightFloor, lightCeil);
+    const l = clamp(base.l + offset.l * mix + lightShift, lightFloor, lightCeil);
     const out = hslToRgb(h, s, l);
     return new Color(out.r, out.g, out.b);
   }
@@ -285,17 +291,37 @@ export function applyParams({ water, scene, renderer, params }) {
   u.uOpticalBalance.value = params.opticalBalance;
   u.uFresnelStrength.value = params.fresnelStrength;
   u.uFresnelViewContrast.value = params.fresnelViewContrast;
-  u.uDistortionStrength.value = params.distortionStrength;
+  // Expand slider travel: Phase 4 default (0.30) stays identical; higher values
+  // push harder so the control is discoverable (raw 0–1.2 felt nearly inert).
+  {
+    const base = OPTICS.distortionStrength;
+    const delta = params.distortionStrength - base;
+    u.uDistortionStrength.value = Math.max(0, base + delta * 2.8);
+  }
   u.uColorDepthStrength.value = params.colorDepthStrength;
 
   _light.copy(LIGHT.color).multiplyScalar(params.lightIntensity);
   _ambient.copy(LIGHT.ambient).multiplyScalar(LIGHT.ambientStrength);
   u.uLightColor.value.copy(_light);
   u.uAmbient.value.copy(_ambient);
-  u.uSpecularStrength.value = params.specularStrength;
-  u.uSpecularNarrowStrength.value = params.specularNarrowStrength;
-  u.uShininess.value = params.shininess;
-  u.uShininessNarrow.value = params.shininessNarrow;
+  // Highlight size is hard to see under a top-down lobe. Expand the exponent
+  // away from the approved defaults and compensate brightness so the sliders read.
+  {
+    const softRatio = Math.max(params.shininess, 1) / LIGHT.shininess;
+    u.uShininess.value = LIGHT.shininess * softRatio ** 1.65;
+    const softEnergy = (1 / softRatio) ** 0.8;
+    u.uSpecularStrength.value = params.specularStrength * softEnergy;
+
+    const sharpRatio = Math.max(params.shininessNarrow, 1) / LIGHT.shininessNarrow;
+    u.uShininessNarrow.value = LIGHT.shininessNarrow * sharpRatio ** 1.65;
+    const sharpEnergy = (1 / sharpRatio) ** 0.7;
+    const narrowBase = LIGHT.specularNarrowStrength;
+    const narrowDelta = params.specularNarrowStrength - narrowBase;
+    u.uSpecularNarrowStrength.value = Math.max(
+      0,
+      (narrowBase + narrowDelta * 6) * sharpEnergy,
+    );
+  }
   u.uCausticSoftStrength.value = params.causticSoftStrength;
 
   const { deep, mid, shallow } = resolvePalette(params);
