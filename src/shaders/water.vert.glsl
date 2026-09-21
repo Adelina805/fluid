@@ -37,6 +37,24 @@ uniform float uNoiseScaleFine;
 uniform float uNoiseDriftSpeed;
 uniform float uNormalEps;
 
+// Phase 5 — simple-math pointer influence (CPU state → uniforms; no FBO).
+uniform vec2 uPointerPos;
+uniform float uPointerStrength;
+uniform vec2 uPointerVelocity;
+uniform float uPointerWake;
+uniform float uProximityRadius;
+uniform float uProximityHeight;
+uniform float uWakeHeight;
+uniform float uRippleSpatialFreq;
+uniform float uRippleSpeed;
+uniform float uRippleSpatialDecay;
+uniform float uRippleTemporalDecay;
+// Packed ripples: xy = origin (world), z = birth time, w = amplitude. Inactive: w <= 0.
+uniform vec4 uRipple0;
+uniform vec4 uRipple1;
+uniform vec4 uRipple2;
+uniform vec4 uRipple3;
+
 varying float vHeight;
 varying float vNoiseVary;
 varying vec3 vNormal;
@@ -73,7 +91,79 @@ float fbm2(vec2 p) {
 }
 
 /**
- * Shared height field: sine foundation + domain warp + multi-scale noise.
+ * Soft proximity + velocity wake around the pointer.
+ * Smooth falloff only — no hard circular mask / cursor bubble.
+ */
+float pointerInfluence(vec2 worldXY, float nMid, float nFine) {
+  float strength = uPointerStrength;
+  if (strength < 1e-4 && uPointerWake < 1e-4) {
+    return 0.0;
+  }
+
+  vec2 delta = worldXY - uPointerPos;
+  float dist = length(delta);
+  // Soft Gaussian falloff — readable core, soft edges (no crisp disk).
+  float radius = max(uProximityRadius, 1e-3);
+  float falloff = exp(-((dist * dist) / (radius * radius * 0.85)));
+
+  // Local lift — presence the user can immediately perceive.
+  float local = falloff * strength * uProximityHeight;
+
+  // Directional wake along smoothed velocity — slow vs fast should read clearly.
+  float velMag = length(uPointerVelocity);
+  float wake = 0.0;
+  if (velMag > 1e-4 && uPointerWake > 1e-4) {
+    vec2 vDir = uPointerVelocity / velMag;
+    float along = dot(delta, vDir);
+    float side = abs(delta.x * vDir.y - delta.y * vDir.x);
+    float alongNorm = along / radius;
+    // Behind (negative along) → stronger; ahead → fades (edges must stay ascending).
+    float behind = 1.0 - smoothstep(-0.2, 0.9, alongNorm);
+    float wakeShape = falloff
+      * behind
+      * exp(-side * side / (radius * radius * 0.7));
+    wake = wakeShape * uPointerWake * uWakeHeight;
+    // Soft asymmetric push along travel — helps “moving through” the surface.
+    local += falloff * strength * along * 0.0045 * uPointerWake;
+  }
+
+  // Organic irregularity so the influence is not a perfect blob.
+  float organics = 1.0 + nMid * 0.14 + nFine * 0.09;
+  return (local + wake) * organics;
+}
+
+/** Single analytic ripple — warped radius so rings are not game-perfect circles. */
+float analyticRipple(vec2 worldXY, vec4 ripple, float nMid, float nFine) {
+  float amp = ripple.w;
+  if (amp <= 0.0) {
+    return 0.0;
+  }
+
+  float age = max(uTime - ripple.z, 0.0);
+  vec2 delta = worldXY - ripple.xy;
+  // Slight procedural warp of distance — organic, not arcade rings.
+  float warp = nMid * 0.055 + nFine * 0.032;
+  float r = length(delta) + warp;
+
+  float envelope = exp(-r * uRippleSpatialDecay) * exp(-age * uRippleTemporalDecay);
+  float waveTerm = sin(r * uRippleSpatialFreq - age * uRippleSpeed);
+  // Near-immediate visibility after tap (tiny soft-in only).
+  float birthSoft = smoothstep(0.0, 0.02, age);
+  return amp * waveTerm * envelope * birthSoft;
+}
+
+float rippleField(vec2 worldXY, float nMid, float nFine) {
+  float r = 0.0;
+  r += analyticRipple(worldXY, uRipple0, nMid, nFine);
+  r += analyticRipple(worldXY, uRipple1, nMid, nFine);
+  r += analyticRipple(worldXY, uRipple2, nMid, nFine);
+  r += analyticRipple(worldXY, uRipple3, nMid, nFine);
+  return r;
+}
+
+/**
+ * Shared height field: sine foundation + domain warp + multi-scale noise
+ * + Phase 5 pointer / ripple influence.
  * Used for both displacement and finite-difference normals.
  */
 float surfaceHeight(vec2 worldXY) {
@@ -112,6 +202,10 @@ float surfaceHeight(vec2 worldXY) {
   h += nBroad * uNoiseHeightAmplitude;
   h += nMid * uNoiseHeightAmplitude * 0.55;
   h += nFine * uNoiseHeightAmplitude * 0.28;
+
+  // Phase 5: weak proximity / wake + analytic tap ripples (same field → normals).
+  h += pointerInfluence(worldXY, nMid, nFine);
+  h += rippleField(worldXY, nMid, nFine);
 
   return h;
 }

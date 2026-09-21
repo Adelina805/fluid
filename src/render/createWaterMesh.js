@@ -1,4 +1,4 @@
-import { Color, Mesh, PlaneGeometry, ShaderMaterial, Vector2, Vector3 } from 'three';
+import { Color, Mesh, PlaneGeometry, ShaderMaterial, Vector2, Vector3, Vector4 } from 'three';
 import vertexShader from '../shaders/water.vert.glsl?raw';
 import fragmentShader from '../shaders/water.frag.glsl?raw';
 
@@ -140,11 +140,34 @@ export const OPTICS = {
   debugOptics: 0,
 };
 
+/**
+ * Phase 5 interaction tuning — clearly perceptible, still calm (not arcade).
+ * Interaction-only; Phase 2–4 visuals unchanged.
+ */
+export const INTERACTION = {
+  /** Soft influence radius in world units — readable presence without a hard disk. */
+  proximityRadius: 0.55,
+  /** Local height under the pointer — clearly perceptible presence. */
+  proximityHeight: 0.0125,
+  /** Velocity wake height — stronger fast move, still controlled. */
+  wakeHeight: 0.018,
+  /** Spatial frequency of analytic tap ripples. */
+  rippleSpatialFreq: 11.5,
+  /** Outward travel speed of ripple phase — responsive propagation. */
+  rippleSpeed: 9.5,
+  /** Distance falloff — lower so the crest travels farther before dying. */
+  rippleSpatialDecay: 1.55,
+  /** Time falloff — smooth return; slightly faster than before so it stays lively. */
+  rippleTemporalDecay: 0.95,
+};
+
 /** Enough segments for soft sine displacement; not over-subdivided. */
 const SEGMENTS = 80;
 
 /**
- * Full-field water plane: Phase 2 surface + Phase 3 lighting + Phase 4 optics.
+ * Full-field water plane: Phase 2–5 visuals.
+ * Phase 6 Stage A: uniforms are seeded/overwritten by controls/params.applyParams
+ * so defaults stay identical on load.
  */
 export function createWaterMesh() {
   const geometry = new PlaneGeometry(2, 2, SEGMENTS, SEGMENTS);
@@ -220,6 +243,23 @@ export function createWaterMesh() {
       uDistortionStrength: { value: OPTICS.distortionStrength },
       uColorDepthStrength: { value: OPTICS.colorDepthStrength },
       uDebugOptics: { value: OPTICS.debugOptics },
+
+      // Phase 5 — pointer / ripple (updated each frame from interaction/pointer.js)
+      uPointerPos: { value: new Vector2(0, 0) },
+      uPointerStrength: { value: 0 },
+      uPointerVelocity: { value: new Vector2(0, 0) },
+      uPointerWake: { value: 0 },
+      uProximityRadius: { value: INTERACTION.proximityRadius },
+      uProximityHeight: { value: INTERACTION.proximityHeight },
+      uWakeHeight: { value: INTERACTION.wakeHeight },
+      uRippleSpatialFreq: { value: INTERACTION.rippleSpatialFreq },
+      uRippleSpeed: { value: INTERACTION.rippleSpeed },
+      uRippleSpatialDecay: { value: INTERACTION.rippleSpatialDecay },
+      uRippleTemporalDecay: { value: INTERACTION.rippleTemporalDecay },
+      uRipple0: { value: new Vector4(0, 0, 0, 0) },
+      uRipple1: { value: new Vector4(0, 0, 0, 0) },
+      uRipple2: { value: new Vector4(0, 0, 0, 0) },
+      uRipple3: { value: new Vector4(0, 0, 0, 0) },
     },
   });
 
