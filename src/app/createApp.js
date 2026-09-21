@@ -14,8 +14,9 @@ import {
 import { createControlPanel } from '../controls/panel.js';
 
 /**
- * Phase 6 Stage B: calm water + pointer interaction + public control panel.
- * No settings persistence. No Tweakpane in production UI.
+ * Phase 6 Stage B + Phase 6.5 caustic study.
+ * Public panel always. DEV also mounts temporary caustic study Tweakpane.
+ * No settings persistence.
  * @param {HTMLElement} root
  */
 export function createApp(root) {
@@ -40,9 +41,13 @@ export function createApp(root) {
   renderer.setClearColor(fieldColor, 1);
   root.appendChild(renderer.domElement);
 
+  const pushParams = () => {
+    applyParams({ water, scene, renderer, params });
+  };
+
   const syncParams = () => {
     applyPublicControls(publicControls, params);
-    applyParams({ water, scene, renderer, params });
+    pushParams();
   };
   // Seed from public defaults → internal params (matches Stage A tuned baseline).
   syncParams();
@@ -135,6 +140,18 @@ export function createApp(root) {
     },
   });
 
+  // Phase 6.5: DEV-only caustic study pane (does not alter production panel).
+  // Dynamic import keeps Tweakpane out of production bundles.
+  let causticGui = null;
+  if (import.meta.env.DEV) {
+    import('../controls/devGui.js').then(({ createCausticStudyGui }) => {
+      causticGui = createCausticStudyGui({
+        params,
+        onChange: pushParams,
+      });
+    });
+  }
+
   return {
     scene,
     camera,
@@ -145,6 +162,7 @@ export function createApp(root) {
     dispose() {
       loop.stop();
       panel.dispose();
+      causticGui?.dispose();
       pointer.dispose();
       renderer.dispose();
       water.geometry.dispose();

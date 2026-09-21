@@ -11,6 +11,7 @@ import {
   LIGHT,
   OPTICS,
   INTERACTION,
+  CAUSTIC_NET,
 } from '../render/createWaterMesh.js';
 
 /**
@@ -61,6 +62,13 @@ export const PARAM_DEFAULTS = Object.freeze({
   shininess: LIGHT.shininess,
   shininessNarrow: LIGHT.shininessNarrow,
   causticSoftStrength: LIGHT.causticSoftStrength,
+
+  // Phase 6.5 — fine caustic network (DEV study; not in production panel)
+  causticNetIntensity: CAUSTIC_NET.intensity,
+  causticNetScale: CAUSTIC_NET.scale,
+  causticNetSharpness: CAUSTIC_NET.sharpness,
+  causticNetWarp: CAUSTIC_NET.warp,
+  causticNetSpeed: CAUSTIC_NET.speed,
 
   // COLOR
   baseHex: '#2a7a9c',
@@ -323,6 +331,11 @@ export function applyParams({ water, scene, renderer, params }) {
     );
   }
   u.uCausticSoftStrength.value = params.causticSoftStrength;
+  u.uCausticNetIntensity.value = params.causticNetIntensity;
+  u.uCausticNetScale.value = params.causticNetScale;
+  u.uCausticNetSharpness.value = params.causticNetSharpness;
+  u.uCausticNetWarp.value = params.causticNetWarp;
+  u.uCausticNetSpeed.value = params.causticNetSpeed;
 
   const { deep, mid, shallow } = resolvePalette(params);
   _deep.copy(deep);

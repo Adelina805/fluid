@@ -110,6 +110,23 @@ export const LIGHT = {
 };
 
 /**
+ * Phase 6.5 — fine caustic network (DEV study defaults).
+ * Dual-scale domain-warped Worley F2−F1 ridges; moderate start for structure evaluation.
+ */
+export const CAUSTIC_NET = {
+  /** Overall additive strength — readable but not screen-filling. */
+  intensity: 1.1,
+  /** Spatial density (higher = finer cells). */
+  scale: 2.0,
+  /** Ridge thinness (lower = sharper/thinner lines). */
+  sharpness: 0.375,
+  /** Domain warp from noise + surface normals. */
+  warp: 0.42,
+  /** Cell drift / evolution speed (tied to uTime). */
+  speed: 0,
+};
+
+/**
  * Phase 4 optics — balanced midpoint: rich blue body + subtle glass.
  * Keeps view-contrast Fresnel visibility; reduces pale wash / overall brightening.
  *
@@ -165,8 +182,8 @@ export const INTERACTION = {
 const SEGMENTS = 80;
 
 /**
- * Full-field water plane: Phase 2–5 visuals.
- * Phase 6 Stage A: uniforms are seeded/overwritten by controls/params.applyParams
+ * Full-field water plane: Phase 2–6 visuals + Phase 6.5 fine caustic network.
+ * Phase 6 Stage A/B: uniforms are seeded/overwritten by controls/params.applyParams
  * so defaults stay identical on load.
  */
 export function createWaterMesh() {
@@ -233,6 +250,13 @@ export function createWaterMesh() {
       uSpecularNarrowStrength: { value: LIGHT.specularNarrowStrength },
       uCameraPosition: { value: new Vector3(0, 0, 2) },
       uCausticSoftStrength: { value: LIGHT.causticSoftStrength },
+
+      // Phase 6.5 — fine caustic network
+      uCausticNetIntensity: { value: CAUSTIC_NET.intensity },
+      uCausticNetScale: { value: CAUSTIC_NET.scale },
+      uCausticNetSharpness: { value: CAUSTIC_NET.sharpness },
+      uCausticNetWarp: { value: CAUSTIC_NET.warp },
+      uCausticNetSpeed: { value: CAUSTIC_NET.speed },
 
       // Phase 4 optics
       uFresnelF0: { value: OPTICS.fresnelF0 },

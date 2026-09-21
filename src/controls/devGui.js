@@ -230,3 +230,94 @@ export function createDevGui({ params, onChange }) {
     },
   };
 }
+
+/**
+ * Phase 6.5 — DEV-only caustic study controls.
+ * Temporary; not mirrored into the production Fluid panel.
+ *
+ * @param {object} options
+ * @param {ReturnType<typeof createParams>} options.params
+ * @param {() => void} options.onChange
+ * @returns {{ dispose: () => void } | null}
+ */
+export function createCausticStudyGui({ params, onChange }) {
+  if (!import.meta.env.DEV) {
+    return null;
+  }
+
+  const pane = new Pane({
+    title: 'Phase 6.5 · Caustic Study',
+    expanded: true,
+  });
+
+  const notify = () => {
+    onChange?.();
+  };
+
+  const folder = pane.addFolder({ title: 'FINE CAUSTIC NETWORK', expanded: true });
+  folder
+    .addBinding(params, 'causticNetIntensity', {
+      label: 'intensity',
+      min: 0,
+      max: 1.8,
+      step: 0.01,
+    })
+    .on('change', notify);
+  folder
+    .addBinding(params, 'causticNetScale', {
+      label: 'density / scale',
+      min: 0.5,
+      max: 22,
+      step: 0.1,
+    })
+    .on('change', notify);
+  folder
+    .addBinding(params, 'causticNetSharpness', {
+      label: 'sharpness',
+      min: 0.03,
+      max: 0.55,
+      step: 0.005,
+    })
+    .on('change', notify);
+  folder
+    .addBinding(params, 'causticNetWarp', {
+      label: 'distortion / warp',
+      min: 0,
+      max: 1.4,
+      step: 0.01,
+    })
+    .on('change', notify);
+  folder
+    .addBinding(params, 'causticNetSpeed', {
+      label: 'animation speed',
+      min: 0,
+      max: 2.0,
+      step: 0.001,
+    })
+    .on('change', notify);
+  folder
+    .addBinding(params, 'causticSoftStrength', {
+      label: 'soft caustics (macro)',
+      min: 0,
+      max: 1.4,
+      step: 0.005,
+    })
+    .on('change', notify);
+
+  pane.addButton({ title: 'Reset caustic defaults' }).on('click', () => {
+    params.causticNetIntensity = PARAM_DEFAULTS.causticNetIntensity;
+    params.causticNetScale = PARAM_DEFAULTS.causticNetScale;
+    params.causticNetSharpness = PARAM_DEFAULTS.causticNetSharpness;
+    params.causticNetWarp = PARAM_DEFAULTS.causticNetWarp;
+    params.causticNetSpeed = PARAM_DEFAULTS.causticNetSpeed;
+    params.causticSoftStrength = PARAM_DEFAULTS.causticSoftStrength;
+    pane.refresh();
+    notify();
+  });
+
+  return {
+    dispose() {
+      pane.dispose();
+    },
+  };
+}

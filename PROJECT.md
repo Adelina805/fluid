@@ -149,7 +149,7 @@ Two primary references (shallow pool water, top-down, no environment):
 
 ### Nice-to-have
 
-- Sharper, web-like caustics closer to references
+- Phase 6.5 caustic study polish after visual feedback (density / sharpness / warp)
 - Hold-to-disturb (once behavior is decided)
 - Soft fade-in / polished control transitions
 - Social preview image / richer metadata
@@ -437,6 +437,25 @@ After each phase: summarize changes, explain important shader math in plain Engl
 
 **STOP** — ask for UX feedback.
 
+### PHASE 6.5 — Caustic Study *(roadmap pause — before Phase 7)*
+
+**Goal:** Fine-scale, animated, interconnected caustic light networks inspired by the reference images — the missing micro layer between broad water motion and concentrated sunlight.
+
+**Context:** Phase 1–6 establish organic motion, depth, optics, interaction, and controls. Soft `softCaustics` only brightens existing mid-scale lit ridges and cannot produce thin branching webs. Do **not** proceed to Phase 7 until this study is visually approved (or explicitly deferred).
+
+**Tasks:**
+- Inspect why current soft caustics read as broad ridges (not fine networks)
+- Implement a dedicated procedural caustic field (prefer single-pass shader; no static caustic texture unless justified)
+- Preserve macro water; caustics ride on / emerge from it
+- DEV-only temporary controls (intensity, density/scale, sharpness, warp, speed); do not dump into production panel
+- Keep pointer, idle, hold, and unrelated Phase 1–6 systems unchanged unless required for compatibility
+
+**Visual target:** Thin luminous lines; irregular cellular branching; varying thickness/brightness; brighter intersections; continuous organic evolution; no tiling / grid / zebra / lightning / cracked-glass look; pale cyan → blue-white (rare near-white nodes); start moderately dense.
+
+**Exit criteria:** Fine caustic network clearly distinct from broad ridges; evolves with the water; reads substantially closer to sunlit pool references; calm preserved; mobile remains performant (~60 desktop / effects drop before sustained &lt;~30 mobile).
+
+**STOP** — ask for visual feedback; do **not** proceed to Phase 7.
+
 ### PHASE 7 — Calm / Idle Behavior
 
 **Goal:** Inactivity is part of the experience.
@@ -527,6 +546,7 @@ After each phase: summarize changes, explain important shader math in plain Engl
 | 2026-09-20 | Phase 4 balancing pass: reduced Fresnel strength/contrast, pale sheen mix, and highlight contribution after overcorrection (too bright / frosted cyan). Restored mid/deep blue body under glass; `paleMask` gates near-white to stronger Fresnel only. Distortion left at 0.30. No Phase 2 surface changes. Still awaiting visual approval. |
 | 2026-09-20 | **Phase 5 implemented:** `interaction/pointer.js` normalizes pointer to world XY (NDC × camera extents); smoothed/clamped velocity; soft proximity presence; up to 4 analytic tap ripples; continuous decay (no idle timer). Vertex height field absorbs influence so normals/lighting/optics respond. Single-touch Pointer Events; `prefers-reduced-motion` attenuates wakes/ripples. **Hold behavior intentionally unresolved** (down/up for tap only). No GPGPU / FBO / Phase 2–4 visual constant changes. Awaiting interaction feedback. |
 | 2026-09-20 | Phase 5 tuning pass: stronger proximity/wake heights; snappier velocity + presence smoothing; clearer slow/medium/fast wake curve; larger/faster analytic ripples with near-immediate birth; mobile fix via `touch-action`, non-passive preventDefault, window-level pointer tracking, and touchstart/move/end fallback (single-touch). Decay mood preserved. Still awaiting interaction approval. |
+| 2026-09-20 | **Roadmap pause before Phase 7.** Owner not yet satisfied with core visual vs references — missing fine interconnected caustic light networks. Soft `softCaustics` diagnosed as mid-scale normal/lighting brightening only (broad ridges), not a caustic field. **Phase 6.5 — Caustic Study** inserted: dedicated procedural fine caustic network (domain-warped multi-scale Worley F2−F1 ridges), macro water preserved, DEV-only tuning, no Phase 7 until visual feedback. |
 
 ---
 
@@ -536,8 +556,9 @@ After each phase: summarize changes, explain important shader math in plain Engl
 - **Keyboard shortcut** for controls — exact key (e.g. `C` / `?` / `,`) not chosen yet.  
 - **Corner icon** placement and visual design (which corner, mark vs wordmark).  
 - **Reduced-motion user choices** — exact options (e.g. still frame / slow drift / no wakes) to be designed in Phase 8.  
-- **Sharper caustics** — when after soft caustics are approved (likely post–Phase 3 or as a polish experiment).  
-- **Surface fine-scale / caustic frequency** — whether to add a dedicated high-frequency optical field and/or lightly refine Phase 2 fine normals later (flagged 2026-09-20; do not rewrite Phase 2 before Phase 4).  
+- **Phase 6.5 caustic study** — awaiting visual feedback (thickness, sharpness, density, brightness, organic feel, integration). Do not start Phase 7 until approved or explicitly deferred.  
+- **Sharper caustics** — superseded in part by Phase 6.5; residual polish after study approval.  
+- **Surface fine-scale / caustic frequency** — Phase 6.5 adds a dedicated high-frequency optical field without rewriting Phase 2 displacement.  
 - **Orthographic vs perspective** top-down implementation detail (both can read as strict top-down; choose in Phase 0/1 for simplest framing).  
 - Whether any **splash**, **multi-touch**, or **audio** experiments earn a place after MVP feel tests.  
 - Exact **DPR caps** and mobile effect ladder (decide with Phase 8–9 measurements).  
