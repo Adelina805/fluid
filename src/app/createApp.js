@@ -5,7 +5,7 @@ import { createTopDownCamera } from '../render/camera.js';
 import { COLOR_DEEP, createWaterMesh } from '../render/createWaterMesh.js';
 
 /**
- * Phase 1: calm full-screen water surface (layered sine displacement + cool tint).
+ * Phase 2: calm full-screen water (sine + subtle noise, procedural normals, height/slope tint).
  * No interaction, Fresnel, refraction, caustics, or public controls.
  * @param {HTMLElement} root
  */

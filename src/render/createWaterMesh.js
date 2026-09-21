@@ -2,48 +2,91 @@ import { Color, Mesh, PlaneGeometry, ShaderMaterial, Vector2 } from 'three';
 import vertexShader from '../shaders/water.vert.glsl?raw';
 import fragmentShader from '../shaders/water.frag.glsl?raw';
 
-/** Medium cool blue — depth without near-navy troughs. */
-export const COLOR_DEEP = new Color(0x2f86a8);
+/** Cool deep blue — depth without near-navy troughs. */
+export const COLOR_DEEP = new Color(0x2a7a9c);
 
-/** Soft cyan crests — cooler than bright turquoise. */
-export const COLOR_SHALLOW = new Color(0x5eb8cc);
+/** Mid cerulean — bridges troughs and crests. */
+export const COLOR_MID = new Color(0x3f9bb8);
+
+/** Soft cyan / slight turquoise crests — cooler than bright aqua. */
+export const COLOR_SHALLOW = new Color(0x6bc4d4);
 
 /**
- * Three sine layers with staggered scales, skewed directions, and
- * mismatched rates so interference stays irregular (still no noise).
+ * Four sine layers with incommensurate scales and skewed directions.
+ * Domain-warped noise (Phase 2) further breaks regular interference.
  */
 export const WAVE_A = {
-  // Broader, slow-leaning sweep
-  dir: new Vector2(0.84, 0.54).normalize(),
-  frequency: 5.2,
+  // Broad, slow sweep
+  dir: new Vector2(0.91, 0.42).normalize(),
+  frequency: 5.5,
   amplitude: 0.017,
-  speed: 0.20,
+  speed: 0.28,
   phase: 0.37,
 };
 
 export const WAVE_B = {
-  // Mid-scale, oblique to A (not perpendicular)
-  dir: new Vector2(-0.71, 0.61).normalize(),
-  frequency: 12.6,
-  amplitude: 0.010,
-  speed: 0.13,
+  // Mid-scale, strongly oblique to A
+  dir: new Vector2(-0.55, 0.83).normalize(),
+  frequency: 12.5,
+  amplitude: 0.012,
+  speed: 0.21,
   phase: 2.15,
 };
 
 export const WAVE_C = {
-  // Finer detail on a third non-symmetric angle
-  dir: new Vector2(0.39, -0.92).normalize(),
-  frequency: 19.4,
-  amplitude: 0.006,
-  speed: 0.27,
+  // Finer detail, third angle
+  dir: new Vector2(0.28, -0.96).normalize(),
+  frequency: 21.5,
+  amplitude: 0.007,
+  speed: 0.34,
   phase: 4.82,
 };
+
+export const WAVE_D = {
+  // Extra mid-fine layer on a fourth non-harmonic angle (breaks diamond cells)
+  dir: new Vector2(-0.95, -0.31).normalize(),
+  frequency: 9.0,
+  amplitude: 0.008,
+  speed: 0.19,
+  phase: 1.08,
+};
+
+/**
+ * Stronger modulation + domain warp to dissolve camouflage / blob repetition.
+ * Still sine-led and calm — not turbulent foam.
+ */
+export const NOISE = {
+  /** Phase push on wave layers. */
+  phaseStrength: 1.55,
+  /** Fractional frequency warp. */
+  freqStrength: 0.14,
+  /** Extra height from noise (multi-scale, still modest). */
+  heightAmplitude: 0.007,
+  /** Domain warp of wave sample positions (key anti-repetition lever). */
+  warpStrength: 0.16,
+  /** Broad / mid / fine FBM domains — intentionally incommensurate. */
+  scaleBroad: 0.58,
+  scaleMid: 1.55,
+  scaleFine: 3.6,
+  /** Faster drift so the field feels alive without looking stormy. */
+  driftSpeed: 0.055,
+};
+
+/** World-space epsilon for finite-difference normals. */
+export const NORMAL_EPS = 0.022;
+
+/** How strongly slope shifts color (0–~2). */
+export const SLOPE_INFLUENCE = 1.7;
+
+/** How strongly independent noise reshapes color vs pure height. */
+export const NOISE_COLOR_INFLUENCE = 0.42;
 
 /** Enough segments for soft sine displacement; not over-subdivided. */
 const SEGMENTS = 80;
 
 /**
- * Full-field water plane with layered sine displacement + cool blue/cyan tint.
+ * Full-field water plane: layered sine + domain-warped noise, procedural normals,
+ * and height/noise/slope cool tint (Phase 2).
  */
 export function createWaterMesh() {
   const geometry = new PlaneGeometry(2, 2, SEGMENTS, SEGMENTS);
@@ -53,7 +96,6 @@ export function createWaterMesh() {
     fragmentShader,
     uniforms: {
       uTime: { value: 0 },
-      // Updated on resize to match mesh scale (world-space wave coordinates).
       uWorldScale: { value: new Vector2(1, 1) },
 
       uWaveADir: { value: WAVE_A.dir.clone() },
@@ -74,8 +116,27 @@ export function createWaterMesh() {
       uWaveCSpeed: { value: WAVE_C.speed },
       uWaveCPhase: { value: WAVE_C.phase },
 
+      uWaveDDir: { value: WAVE_D.dir.clone() },
+      uWaveDFrequency: { value: WAVE_D.frequency },
+      uWaveDAmplitude: { value: WAVE_D.amplitude },
+      uWaveDSpeed: { value: WAVE_D.speed },
+      uWaveDPhase: { value: WAVE_D.phase },
+
+      uNoisePhaseStrength: { value: NOISE.phaseStrength },
+      uNoiseFreqStrength: { value: NOISE.freqStrength },
+      uNoiseHeightAmplitude: { value: NOISE.heightAmplitude },
+      uNoiseWarpStrength: { value: NOISE.warpStrength },
+      uNoiseScaleBroad: { value: NOISE.scaleBroad },
+      uNoiseScaleMid: { value: NOISE.scaleMid },
+      uNoiseScaleFine: { value: NOISE.scaleFine },
+      uNoiseDriftSpeed: { value: NOISE.driftSpeed },
+      uNormalEps: { value: NORMAL_EPS },
+
       uColorDeep: { value: COLOR_DEEP.clone() },
+      uColorMid: { value: COLOR_MID.clone() },
       uColorShallow: { value: COLOR_SHALLOW.clone() },
+      uSlopeInfluence: { value: SLOPE_INFLUENCE },
+      uNoiseColorInfluence: { value: NOISE_COLOR_INFLUENCE },
     },
   });
 
