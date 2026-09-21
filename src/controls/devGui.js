@@ -232,21 +232,23 @@ export function createDevGui({ params, onChange }) {
 }
 
 /**
- * Phase 6.5 — DEV-only caustic study controls.
- * Temporary; not mirrored into the production Fluid panel.
+ * Phase 6.5 — caustic study Tweakpane (not mounted by default).
+ * Public semantic controls own caustic derivation. Remount temporarily
+ * from createApp if baseline retuning is needed.
  *
  * @param {object} options
  * @param {ReturnType<typeof createParams>} options.params
  * @param {() => void} options.onChange
- * @returns {{ dispose: () => void } | null}
+ * @param {() => void} [options.onReset] — restore baseline via public re-derive
+ * @returns {{ dispose: () => void, refresh: () => void } | null}
  */
-export function createCausticStudyGui({ params, onChange }) {
+export function createCausticStudyGui({ params, onChange, onReset }) {
   if (!import.meta.env.DEV) {
     return null;
   }
 
   const pane = new Pane({
-    title: 'Phase 6.5 · Caustic Study',
+    title: 'Phase 6.5 · Caustic Study (live / derived)',
     expanded: true,
   });
 
@@ -254,7 +256,10 @@ export function createCausticStudyGui({ params, onChange }) {
     onChange?.();
   };
 
-  const folder = pane.addFolder({ title: 'FINE CAUSTIC NETWORK', expanded: true });
+  const folder = pane.addFolder({
+    title: 'FINE CAUSTIC NETWORK',
+    expanded: true,
+  });
   folder
     .addBinding(params, 'causticNetIntensity', {
       label: 'intensity',
@@ -305,12 +310,8 @@ export function createCausticStudyGui({ params, onChange }) {
     .on('change', notify);
 
   pane.addButton({ title: 'Reset caustic defaults' }).on('click', () => {
-    params.causticNetIntensity = PARAM_DEFAULTS.causticNetIntensity;
-    params.causticNetScale = PARAM_DEFAULTS.causticNetScale;
-    params.causticNetSharpness = PARAM_DEFAULTS.causticNetSharpness;
-    params.causticNetWarp = PARAM_DEFAULTS.causticNetWarp;
-    params.causticNetSpeed = PARAM_DEFAULTS.causticNetSpeed;
-    params.causticSoftStrength = PARAM_DEFAULTS.causticSoftStrength;
+    // Re-derive from current public sliders around approved baseline.
+    onReset?.();
     pane.refresh();
     notify();
   });
@@ -318,6 +319,9 @@ export function createCausticStudyGui({ params, onChange }) {
   return {
     dispose() {
       pane.dispose();
+    },
+    refresh() {
+      pane.refresh();
     },
   };
 }

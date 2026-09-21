@@ -29,12 +29,14 @@ uniform float uColorDepthStrength;
 // 0 = full composite; 1 = Fresnel; 2 = distortion; 3 = base color; 4 = lighting only.
 uniform float uDebugOptics;
 
-// Phase 6.5 — fine caustic network (DEV-tunable).
+// Phase 6.5 — fine caustic network (DEV-tunable + public-derived).
 uniform float uCausticNetIntensity;
 uniform float uCausticNetScale;
 uniform float uCausticNetSharpness;
 uniform float uCausticNetWarp;
 uniform float uCausticNetSpeed;
+uniform vec3 uCausticTint;
+uniform vec3 uCausticHot;
 
 varying float vHeight;
 varying float vNoiseVary;
@@ -293,10 +295,10 @@ void main() {
   float netGate = mix(0.52, 1.0, softBand) * mix(0.68, 1.05, NdotL);
   net *= netGate * uCausticNetIntensity;
   float netHot = smoothstep(0.35, 1.15, net);
-  // Pale cyan → blue-white at rare strong nodes; blue body remains visible.
+  // Palette-derived luminous tint → near-white at rare strong nodes.
   vec3 netTint = mix(
-    mix(vec3(0.48, 0.78, 0.88), uSpecularColor, 0.35),
-    vec3(0.90, 0.97, 1.0),
+    mix(uCausticTint, uSpecularColor, 0.28),
+    uCausticHot,
     netHot * 0.72
   );
   color += netTint * net * 0.42;

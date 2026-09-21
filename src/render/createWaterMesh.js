@@ -110,13 +110,14 @@ export const LIGHT = {
 };
 
 /**
- * Phase 6.5 — fine caustic network (DEV study defaults).
- * Dual-scale domain-warped Worley F2−F1 ridges; moderate start for structure evaluation.
+ * Phase 6.5 — approved fine caustic network baseline (user-tuned).
+ * Public semantic controls derive offsets around these values; do not overwrite lightly.
+ * Dual-scale domain-warped Worley F2−F1 ridges.
  */
-export const CAUSTIC_NET = {
-  /** Overall additive strength — readable but not screen-filling. */
+export const CAUSTIC_NET = Object.freeze({
+  /** Overall additive strength. */
   intensity: 1.1,
-  /** Spatial density (higher = finer cells). */
+  /** Spatial density (higher = finer cells). Locked internal — not public. */
   scale: 2.0,
   /** Ridge thinness (lower = sharper/thinner lines). */
   sharpness: 0.375,
@@ -124,7 +125,16 @@ export const CAUSTIC_NET = {
   warp: 0.42,
   /** Cell drift / evolution speed (tied to uTime). */
   speed: 0,
-};
+});
+
+/** Safe visual clamps for derived caustic params. */
+export const CAUSTIC_CLAMPS = Object.freeze({
+  intensity: Object.freeze({ min: 0.28, max: 1.6 }),
+  scale: Object.freeze({ min: 2.0, max: 2.0 }),
+  sharpness: Object.freeze({ min: 0.22, max: 0.48 }),
+  warp: Object.freeze({ min: 0.15, max: 0.85 }),
+  speed: Object.freeze({ min: 0, max: 0.4 }),
+});
 
 /**
  * Phase 4 optics — balanced midpoint: rich blue body + subtle glass.
@@ -257,6 +267,9 @@ export function createWaterMesh() {
       uCausticNetSharpness: { value: CAUSTIC_NET.sharpness },
       uCausticNetWarp: { value: CAUSTIC_NET.warp },
       uCausticNetSpeed: { value: CAUSTIC_NET.speed },
+      // Palette-derived caustic tints (overwritten by applyParams).
+      uCausticTint: { value: new Color(0x7ac8dc) },
+      uCausticHot: { value: new Color(0xe6f7fc) },
 
       // Phase 4 optics
       uFresnelF0: { value: OPTICS.fresnelF0 },

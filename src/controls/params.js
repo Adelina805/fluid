@@ -12,6 +12,7 @@ import {
   OPTICS,
   INTERACTION,
   CAUSTIC_NET,
+  CAUSTIC_CLAMPS,
 } from '../render/createWaterMesh.js';
 
 /**
@@ -36,7 +37,9 @@ const _mid = new Color();
 const _shallow = new Color();
 const _light = new Color();
 const _ambient = new Color();
-
+const _causticTint = new Color();
+const _causticHot = new Color();
+const _causticHsl = { h: 0, s: 0, l: 0 };
 /**
  * Stage A / public-candidate tunable state.
  * Defaults match the approved Phase 5 visual + interaction feel exactly
@@ -63,7 +66,7 @@ export const PARAM_DEFAULTS = Object.freeze({
   shininessNarrow: LIGHT.shininessNarrow,
   causticSoftStrength: LIGHT.causticSoftStrength,
 
-  // Phase 6.5 — fine caustic network (DEV study; not in production panel)
+  // Phase 6.5 — fine caustic network (approved baseline; public-derived at runtime)
   causticNetIntensity: CAUSTIC_NET.intensity,
   causticNetScale: CAUSTIC_NET.scale,
   causticNetSharpness: CAUSTIC_NET.sharpness,
@@ -345,6 +348,21 @@ export function applyParams({ water, scene, renderer, params }) {
   u.uColorMid.value.copy(_mid);
   u.uColorShallow.value.copy(_shallow);
 
+  // Phase 6.5 — caustic highlights derived from selected palette (any hex).
+  _shallow.getHSL(_causticHsl);
+  _causticTint.setHSL(
+    _causticHsl.h,
+    clamp(_causticHsl.s * 0.38, 0.05, 0.55),
+    clamp(_causticHsl.l * 0.45 + 0.48, 0.55, 0.9),
+  );
+  _causticHot.setHSL(
+    _causticHsl.h,
+    clamp(_causticHsl.s * 0.12, 0.02, 0.22),
+    clamp(_causticHsl.l * 0.2 + 0.78, 0.82, 0.97),
+  );
+  u.uCausticTint.value.copy(_causticTint);
+  u.uCausticHot.value.copy(_causticHot);
+
   // Keep page / clear color locked to the deep body tone.
   scene.background.copy(_deep);
   renderer.setClearColor(_deep, 1);
@@ -446,8 +464,68 @@ export function createPublicControls() {
 }
 
 /**
+ * Derive fine-caustic params from public semantic axes around the approved baseline.
+ * At public defaults every returned value equals CAUSTIC_NET exactly.
+ *
+ * @param {ReturnType<typeof createPublicControls>} publicControls
+ * @returns {{ intensity: number, scale: number, sharpness: number, warp: number, speed: number }}
+ */
+export function deriveCausticParams(publicControls) {
+  const cr = clamp01(publicControls.calmRestless);
+  const gt = clamp01(publicControls.glassyTurbulent);
+  const rt = clamp01(publicControls.reflectiveTranslucent);
+  const li = clamp01(publicControls.light);
+
+  const dCr = cr - PUBLIC_DEFAULTS.calmRestless;
+  const dGt = gt - PUBLIC_DEFAULTS.glassyTurbulent;
+  const dRt = rt - PUBLIC_DEFAULTS.reflectiveTranslucent;
+  const dLi = li - PUBLIC_DEFAULTS.light;
+
+  // Calm↔restless: motion only — speed rises with restless; mild warp.
+  const restlessSpan = Math.max(1e-6, 1 - PUBLIC_DEFAULTS.calmRestless);
+  const speed = clamp(
+    CAUSTIC_NET.speed + (Math.max(0, dCr) / restlessSpan) * CAUSTIC_CLAMPS.speed.max,
+    CAUSTIC_CLAMPS.speed.min,
+    CAUSTIC_CLAMPS.speed.max,
+  );
+
+  // Glassy↔turbulent: strongest structure (warp); mild sharpness.
+  // Calm↔restless adds a small warp contribution.
+  const warp = clamp(
+    CAUSTIC_NET.warp + dCr * 0.08 + dGt * 0.28,
+    CAUSTIC_CLAMPS.warp.min,
+    CAUSTIC_CLAMPS.warp.max,
+  );
+
+  // Glassy = slightly cleaner/higher sharpness; turbulent = slightly softer.
+  // Bright = very mild sharpness lift.
+  const sharpness = clamp(
+    CAUSTIC_NET.sharpness - dGt * 0.05 + dLi * 0.04,
+    CAUSTIC_CLAMPS.sharpness.min,
+    CAUSTIC_CLAMPS.sharpness.max,
+  );
+
+  // Light = strongest intensity driver; translucent = slight visibility lift.
+  const intensity = clamp(
+    CAUSTIC_NET.intensity + dLi * 0.85 + dRt * 0.12,
+    CAUSTIC_CLAMPS.intensity.min,
+    CAUSTIC_CLAMPS.intensity.max,
+  );
+
+  // Density/scale stays internal at the approved baseline.
+  const scale = clamp(
+    CAUSTIC_NET.scale,
+    CAUSTIC_CLAMPS.scale.min,
+    CAUSTIC_CLAMPS.scale.max,
+  );
+
+  return { intensity, scale, sharpness, warp, speed };
+}
+
+/**
  * Map human-readable public controls onto internal params.
  * Preserves non-exposed internals at PARAM_DEFAULTS.
+ * Fine caustics are derived around CAUSTIC_NET (approved baseline).
  *
  * @param {ReturnType<typeof createPublicControls>} publicControls
  * @param {ReturnType<typeof createParams>} params
@@ -495,6 +573,14 @@ export function applyPublicControls(publicControls, params) {
 
   params.warmCool = 0;
   params.depthMix = 1;
+
+  // Phase 6.5 — fine caustics from semantic axes around approved baseline.
+  const caustic = deriveCausticParams(publicControls);
+  params.causticNetIntensity = caustic.intensity;
+  params.causticNetScale = caustic.scale;
+  params.causticNetSharpness = caustic.sharpness;
+  params.causticNetWarp = caustic.warp;
+  params.causticNetSpeed = caustic.speed;
 
   const parsed = parseHexColor(publicControls.colorHex);
   if (parsed) {
