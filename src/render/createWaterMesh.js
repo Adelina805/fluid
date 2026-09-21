@@ -95,27 +95,56 @@ export const LIGHT = {
   /** Ambient floor — lower than first pass so form reads; still never black. */
   ambient: new Color(0x6a9eb0),
   ambientStrength: 0.40,
-  /** Pale cyan specular tint (hottest hits push nearer white in-shader). */
+  /** Pale cyan specular tint (hottest hits stay tinted, not blown white). */
   specularColor: new Color(0xe2f6fb),
-  /** Broad soft lobe strength. */
-  specularStrength: 0.28,
+  /** Broad soft lobe — balanced pass: less blown-out highlight. */
+  specularStrength: 0.17,
   /** Soft Blinn-Phong exponent — broad water sheen. */
   shininess: 28.0,
   /** Narrow lobe exponent — occasional concentrated glints. */
   shininessNarrow: 72.0,
-  /** Narrow lobe strength — keep sparse; avoid chrome. */
-  specularNarrowStrength: 0.42,
-  /** Subtle top-down view lift (not Fresnel). */
-  viewBrightness: 0.10,
-  /** Soft caustic-like streak amount (still hint-level, not sharp webs). */
-  causticSoftStrength: 0.26,
+  /** Narrow lobe — localized only. */
+  specularNarrowStrength: 0.24,
+  /** Soft caustic-like streaks — hint level. */
+  causticSoftStrength: 0.13,
+};
+
+/**
+ * Phase 4 optics — balanced midpoint: rich blue body + subtle glass.
+ * Keeps view-contrast Fresnel visibility; reduces pale wash / overall brightening.
+ *
+ * Debug: set `debugOptics` temporarily to 1–4 (Fresnel / distortion / albedo / lighting).
+ * Leave at 0 for the normal composite (no UI).
+ */
+export const OPTICS = {
+  /** Schlick F0 — water-like dielectric (not metal). */
+  fresnelF0: 0.04,
+  /** Slightly steeper falloff — pale response on stronger tilts only. */
+  fresnelPower: 2.05,
+  /** Overall Fresnel scale — reduced from overcorrected 1.35. */
+  fresnelStrength: 1.0,
+  /**
+   * Expands the near-1 N·V band under top-down so ridge tilts separate.
+   * Slightly lower than diagnostic peak so Fresnel does not flood the frame.
+   */
+  fresnelViewContrast: 11.5,
+  /** 0 = translucent, 1 = reflective. Lean back toward rich water body. */
+  opticalBalance: 0.42,
+  /**
+   * Normal-tied analytic tone offset — left unchanged this balancing pass.
+   */
+  distortionStrength: 0.30,
+  /** Optical thickness / clarity — enough depth, less frost lift. */
+  colorDepthStrength: 0.62,
+  /** 0 = full; 1 = Fresnel; 2 = distortion; 3 = albedo; 4 = lighting. */
+  debugOptics: 0,
 };
 
 /** Enough segments for soft sine displacement; not over-subdivided. */
 const SEGMENTS = 80;
 
 /**
- * Full-field water plane: Phase 2 surface character + Phase 3 directional lighting.
+ * Full-field water plane: Phase 2 surface + Phase 3 lighting + Phase 4 optics.
  */
 export function createWaterMesh() {
   const geometry = new PlaneGeometry(2, 2, SEGMENTS, SEGMENTS);
@@ -180,8 +209,17 @@ export function createWaterMesh() {
       uShininessNarrow: { value: LIGHT.shininessNarrow },
       uSpecularNarrowStrength: { value: LIGHT.specularNarrowStrength },
       uCameraPosition: { value: new Vector3(0, 0, 2) },
-      uViewBrightness: { value: LIGHT.viewBrightness },
       uCausticSoftStrength: { value: LIGHT.causticSoftStrength },
+
+      // Phase 4 optics
+      uFresnelF0: { value: OPTICS.fresnelF0 },
+      uFresnelPower: { value: OPTICS.fresnelPower },
+      uFresnelStrength: { value: OPTICS.fresnelStrength },
+      uFresnelViewContrast: { value: OPTICS.fresnelViewContrast },
+      uOpticalBalance: { value: OPTICS.opticalBalance },
+      uDistortionStrength: { value: OPTICS.distortionStrength },
+      uColorDepthStrength: { value: OPTICS.colorDepthStrength },
+      uDebugOptics: { value: OPTICS.debugOptics },
     },
   });
 

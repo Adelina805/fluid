@@ -5,8 +5,8 @@ import { createTopDownCamera } from '../render/camera.js';
 import { COLOR_DEEP, createWaterMesh } from '../render/createWaterMesh.js';
 
 /**
- * Phase 3: calm full-screen water with directional Blinn-Phong lighting.
- * No interaction, Fresnel, refraction, reflection maps, or public controls.
+ * Phase 4: calm full-screen water with lighting + Fresnel / optical blend.
+ * No interaction, env maps, multipass refraction, or public controls.
  * @param {HTMLElement} root
  */
 export function createApp(root) {
