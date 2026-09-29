@@ -299,6 +299,47 @@ export function applyParams({ water, scene, renderer, params }) {
   u.uNoiseWarpStrength.value = NOISE.warpStrength * turb;
   u.uNoiseDriftSpeed.value = NOISE.driftSpeed * speedMul;
 
+  applyShadingParams(u, params);
+
+  u.uCausticNetIntensity.value = params.causticNetIntensity;
+  u.uCausticNetScale.value = params.causticNetScale;
+  u.uCausticNetSharpness.value = params.causticNetSharpness;
+  u.uCausticNetWarp.value = params.causticNetWarp;
+  u.uCausticNetSpeed.value = params.causticNetSpeed;
+
+  // Phase 6.5 — caustic highlights derived from selected palette (any hex).
+  u.uColorShallow.value.getHSL(_causticHsl);
+  _causticTint.setHSL(
+    _causticHsl.h,
+    clamp(_causticHsl.s * 0.38, 0.05, 0.55),
+    clamp(_causticHsl.l * 0.45 + 0.48, 0.55, 0.9),
+  );
+  _causticHot.setHSL(
+    _causticHsl.h,
+    clamp(_causticHsl.s * 0.12, 0.02, 0.22),
+    clamp(_causticHsl.l * 0.2 + 0.78, 0.82, 0.97),
+  );
+  u.uCausticTint.value.copy(_causticTint);
+  u.uCausticHot.value.copy(_causticHot);
+
+  // Keep page / clear color locked to the deep body tone.
+  scene.background.copy(u.uColorDeep.value);
+  renderer.setClearColor(u.uColorDeep.value, 1);
+
+  u.uProximityRadius.value = params.proximityRadius;
+  u.uProximityHeight.value = params.proximityHeight * params.pointerInfluence;
+  u.uWakeHeight.value = params.wakeHeight * params.velocityResponse;
+  u.uRippleSpeed.value = params.rippleSpeed;
+}
+
+/**
+ * Surface shading uniforms (palette, light, specular, optics, soft streaks) shared by the
+ * legacy water mesh and the sim composite, so both read the same mapped values.
+ *
+ * @param {Record<string, { value: any }>} u
+ * @param {ReturnType<typeof createParams>} params
+ */
+export function applyShadingParams(u, params) {
   u.uOpticalBalance.value = params.opticalBalance;
   u.uFresnelStrength.value = params.fresnelStrength;
   u.uFresnelViewContrast.value = params.fresnelViewContrast;
@@ -334,11 +375,6 @@ export function applyParams({ water, scene, renderer, params }) {
     );
   }
   u.uCausticSoftStrength.value = params.causticSoftStrength;
-  u.uCausticNetIntensity.value = params.causticNetIntensity;
-  u.uCausticNetScale.value = params.causticNetScale;
-  u.uCausticNetSharpness.value = params.causticNetSharpness;
-  u.uCausticNetWarp.value = params.causticNetWarp;
-  u.uCausticNetSpeed.value = params.causticNetSpeed;
 
   const { deep, mid, shallow } = resolvePalette(params);
   _deep.copy(deep);
@@ -347,30 +383,6 @@ export function applyParams({ water, scene, renderer, params }) {
   u.uColorDeep.value.copy(_deep);
   u.uColorMid.value.copy(_mid);
   u.uColorShallow.value.copy(_shallow);
-
-  // Phase 6.5 — caustic highlights derived from selected palette (any hex).
-  _shallow.getHSL(_causticHsl);
-  _causticTint.setHSL(
-    _causticHsl.h,
-    clamp(_causticHsl.s * 0.38, 0.05, 0.55),
-    clamp(_causticHsl.l * 0.45 + 0.48, 0.55, 0.9),
-  );
-  _causticHot.setHSL(
-    _causticHsl.h,
-    clamp(_causticHsl.s * 0.12, 0.02, 0.22),
-    clamp(_causticHsl.l * 0.2 + 0.78, 0.82, 0.97),
-  );
-  u.uCausticTint.value.copy(_causticTint);
-  u.uCausticHot.value.copy(_causticHot);
-
-  // Keep page / clear color locked to the deep body tone.
-  scene.background.copy(_deep);
-  renderer.setClearColor(_deep, 1);
-
-  u.uProximityRadius.value = params.proximityRadius;
-  u.uProximityHeight.value = params.proximityHeight * params.pointerInfluence;
-  u.uWakeHeight.value = params.wakeHeight * params.velocityResponse;
-  u.uRippleSpeed.value = params.rippleSpeed;
 }
 
 /**

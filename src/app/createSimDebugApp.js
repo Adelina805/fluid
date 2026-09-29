@@ -3,6 +3,7 @@ import { bindResize } from './resize.js';
 import { bindVisibility } from './visibility.js';
 import { createTopDownCamera } from '../render/camera.js';
 import { COLOR_DEEP } from '../render/createWaterMesh.js';
+import { SIM_HEIGHT_SCALE, createSurfaceComposite } from '../render/createSurfaceComposite.js';
 import { createSimPointer } from '../interaction/simPointer.js';
 import {
   MAX_STEPS_PER_FRAME,
@@ -97,10 +98,12 @@ function createGpuTimer(gl) {
 
 /**
  * `?sim` entry: low-res wave simulation shown as a grayscale height view (or, with
- * `normals`, RGB-encoded sim normals), disturbed by pointer / touch (Stage B).
- * Independent of the approved water mesh and control panel.
+ * `normals`, RGB-encoded sim normals; with `water`, the approved shading driven by the sim),
+ * disturbed by pointer / touch (Stage B). Independent of the approved water mesh and control panel.
  *
- * Dev URL options: `normals` (normal view), `cubic` (B-spline height sampling),
+ * Dev URL options: `water` (sim-driven water composite, Stage D), `optics=<1–4>` (water: Fresnel /
+ * distortion / albedo / lighting only; cubic B-spline height by default, `bilinear` to compare),
+ * `normals` (normal view), `cubic` (B-spline height sampling in the height / normal views),
  * `normalStrength=<n>`, `debugPadding` (show sponge margin), `gain=<n>`, `simFps=<n>` (throttle render loop),
  * `testImpulses` (replay the Stage A impulses). Console: `__fluidSim.impulse(x, y, amplitude, radius)`.
  * @param {HTMLElement} root
@@ -109,8 +112,10 @@ export function createSimDebugApp(root) {
   const query = new URLSearchParams(window.location.search);
   const showPadding = query.has('debugPadding');
   const gain = Number(query.get('gain')) || DEBUG_GAIN;
+  const showWater = query.has('water');
+  const debugOptics = Math.min(Math.max(Math.round(Number(query.get('optics')) || 0), 0), 4);
   const showNormals = query.has('normals');
-  const cubicHeight = query.has('cubic');
+  const cubicHeight = showWater ? !query.has('bilinear') : query.has('cubic');
   const requestedStrength = Number(query.get('normalStrength'));
   const normalStrength = query.has('normalStrength') && Number.isFinite(requestedStrength)
     ? Math.min(Math.max(requestedStrength, 0), MAX_NORMAL_STRENGTH)
@@ -140,47 +145,59 @@ export function createSimDebugApp(root) {
 
   const pendingTestImpulses = replayTestImpulses ? [...TEST_IMPULSES] : [];
 
-  const debugMaterial = new ShaderMaterial({
-    vertexShader: fullscreenVertexShader,
-    fragmentShader: `${simSurfaceShaderChunk}\n${simDebugFragmentShader}`,
-    uniforms: {
-      uState: { value: null },
-      uGridSize: { value: new Vector2(1, 1) },
-      uPadding: { value: SIM_EDGE_PADDING },
-      uGain: { value: gain },
-      uShowPadding: { value: showPadding ? 1 : 0 },
-      uView: { value: showNormals ? 1 : 0 },
-      uNormalStrength: { value: normalStrength },
-    },
-    defines: cubicHeight ? { SIM_CUBIC: '' } : {},
-    depthTest: false,
-    depthWrite: false,
-  });
-  const debugQuad = new Mesh(new PlaneGeometry(2, 2), debugMaterial);
-  debugQuad.frustumCulled = false;
-  const debugScene = new Scene();
-  debugScene.add(debugQuad);
-  console.info(
-    showNormals
-      ? `[sim] view: normals (strength ${normalStrength}, ${cubicHeight ? 'cubic B-spline' : 'bilinear'} height)`
-      : '[sim] view: height',
-  );
+  const samplingLabel = cubicHeight ? 'cubic B-spline' : 'bilinear';
+  let viewMesh;
+  if (showWater) {
+    viewMesh = createSurfaceComposite({ padding: SIM_EDGE_PADDING, normalStrength, debugOptics, cubicHeight });
+    viewMesh.material.uniforms.uCameraPosition.value.copy(camera.position);
+    console.info(
+      `[sim] view: water composite (normal strength ${normalStrength}, ${samplingLabel} height` +
+        `, height scale ${SIM_HEIGHT_SCALE}${debugOptics ? `, optics debug ${debugOptics}` : ''}; caustics off)`,
+    );
+  } else {
+    const debugMaterial = new ShaderMaterial({
+      vertexShader: fullscreenVertexShader,
+      fragmentShader: `${simSurfaceShaderChunk}\n${simDebugFragmentShader}`,
+      uniforms: {
+        uState: { value: null },
+        uGridSize: { value: new Vector2(1, 1) },
+        uPadding: { value: SIM_EDGE_PADDING },
+        uGain: { value: gain },
+        uShowPadding: { value: showPadding ? 1 : 0 },
+        uView: { value: showNormals ? 1 : 0 },
+        uNormalStrength: { value: normalStrength },
+      },
+      defines: cubicHeight ? { SIM_CUBIC: '' } : {},
+      depthTest: false,
+      depthWrite: false,
+    });
+    viewMesh = new Mesh(new PlaneGeometry(2, 2), debugMaterial);
+    viewMesh.frustumCulled = false;
+    console.info(
+      showNormals ? `[sim] view: normals (strength ${normalStrength}, ${samplingLabel} height)` : '[sim] view: height',
+    );
+  }
+  const viewUniforms = viewMesh.material.uniforms;
+  const viewScene = new Scene();
+  viewScene.add(viewMesh);
 
   window.__fluidSim = {
     sim,
+    /** Dev-only: live view uniforms (e.g. `uSimHeightScale`, `uNormalStrength`) for tuning. */
+    uniforms: viewUniforms,
     /** Dev-only manual impulse; UV coordinates, y up. */
     impulse: (x = 0.5, y = 0.5, amplitude = 1.0, radius = 6) => sim.addImpulse(x, y, radius, amplitude),
     /** Dev-only: draw the current state immediately (for scripted captures). */
     render: () => {
-      debugMaterial.uniforms.uState.value = sim.getTexture();
-      renderer.render(debugScene, camera);
+      viewUniforms.uState.value = sim.getTexture();
+      renderer.render(viewScene, camera);
     },
   };
 
   const rebuildSim = () => {
     sim.resize(window.innerWidth, window.innerHeight);
     const { width, height, visibleWidth, visibleHeight } = sim.getGridSize();
-    debugMaterial.uniforms.uGridSize.value.set(width, height);
+    viewUniforms.uGridSize.value.set(width, height);
     console.info(
       `[sim] grid ${visibleWidth}×${visibleHeight} visible + ${SIM_EDGE_PADDING}px sponge = ${width}×${height} texels (RGBA half-float)`,
     );
@@ -189,6 +206,7 @@ export function createSimDebugApp(root) {
   let resizeTimer = 0;
   let initialized = false;
   const unbindResize = bindResize(renderer, camera, () => {
+    viewUniforms.uWorldScale?.value.set(camera.right, camera.top);
     if (!initialized) {
       initialized = true;
       rebuildSim();
@@ -294,9 +312,9 @@ export function createSimDebugApp(root) {
       }
     }
 
-    debugMaterial.uniforms.uState.value = sim.getTexture();
+    viewUniforms.uState.value = sim.getTexture();
     gpuTimer?.begin('debug');
-    renderer.render(debugScene, camera);
+    renderer.render(viewScene, camera);
     gpuTimer?.end();
     gpuTimer?.poll();
 
@@ -339,8 +357,8 @@ export function createSimDebugApp(root) {
       unbindVisibility();
       clearTimeout(resizeTimer);
       sim.dispose();
-      debugQuad.geometry.dispose();
-      debugMaterial.dispose();
+      viewMesh.geometry.dispose();
+      viewMesh.material.dispose();
       renderer.dispose();
       if (renderer.domElement.parentElement === root) {
         root.removeChild(renderer.domElement);
