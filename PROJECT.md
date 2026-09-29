@@ -161,7 +161,7 @@ Two primary references (shallow pool water, top-down, no environment):
 - Audio (ambient / water-responsive)
 - Multi-touch influence
 - Splash-like moments (evaluate by feel)
-- GPGPU / ping-pong heightfield simulation (only if simple math ripples fail to feel right)
+- ~~GPGPU / ping-pong heightfield simulation (only if simple math ripples fail to feel right)~~ — **adopted 2026-09-29**; see [Architectural Pivot](#architectural-pivot)
 - Additional sensory macro controls
 - Persistence of settings (explicitly out of current product decision)
 
@@ -306,6 +306,8 @@ Each roadmap phase maps to a subset of this ladder. Prefer readable shader code 
 
 Hold behavior remains an **open question**; do not implement a locked hold model until decided.
 
+> **Superseded 2026-09-29:** profiling showed the simple math approach cannot feel tactile (no shared state). The ping-pong heightfield fallback is now adopted — see [Architectural Pivot](#architectural-pivot) and [Replacement Roadmap](#replacement-roadmap).
+
 ---
 
 ## Controls Strategy
@@ -366,6 +368,8 @@ Hold behavior remains an **open question**; do not implement a locked hold model
 Highly incremental. **Never implement multiple phases without approval.**  
 At the start of every coding session: **read this file first.**  
 After each phase: summarize changes, explain important shader math in plain English, list what to evaluate manually, and ask whether to tune or proceed.
+
+> **Status 2026-09-29:** Phases 0–6.5 are complete and define the visual target. **Phases 7–10 are paused** in favor of the [Replacement Roadmap](#replacement-roadmap). Phase 7 (idle calm) folds into simulation damping and the Stage D idle source; Phases 8–9 fold partly into Stage F; remaining Phase 8 items and Phase 10 resume after Stage G.
 
 ### PHASE 0 — Setup
 
@@ -484,6 +488,333 @@ After each phase: summarize changes, explain important shader math in plain Engl
 
 ---
 
+# Architectural Pivot
+
+*Decided 2026-09-29, after the architecture profiling pass. This is a **partial** replacement, not a rewrite.*
+
+**Keep:** Vite · Three.js · `WebGLRenderer` / WebGL2 · orthographic top-down camera · Vercel · existing app shell · approved palette · approved lighting / optical ideas where practical · current caustic appearance as a **visual reference** · public UI concept · pointer / touch input handling where reusable.
+
+**Replace:** the stateless procedural surface as the primary interaction surface · the stateless analytic ripple system · the expensive full-resolution caustic implementation.
+
+**New direction:** low-res GPU water simulation **+** full-res visual composite **+** cheaper procedural caustics.
+
+### 1. Why the original stateless approach was insufficient
+
+- Every vertex (surface) and every pixel (caustics) evaluates height and light as `f(position, time, uniforms)`. Nothing persists between frames — there is **no shared water state**.
+- Without state, a touch cannot leave a trail, energy cannot travel outward, ripples cannot interfere with each other or the idle waves, and the surface cannot settle on its own. Those are exactly the tactile qualities this project wants ("responsive but not hyperactive", "return to calm organically").
+- Pointer influence is visually weak relative to idle motion: the proximity bump's peak slope is ~0.02 and the wake's ~0.03, against ~0.24 for the idle waves. Lighting is slope-driven, so the pointer barely changes the image.
+- The wake is shaped around the *current* cursor position only and vanishes ~100 ms after the pointer stops. Tap ripples are 4 closed-form slots (`A·sin(k·r − ω·t)·e^(−αr)·e^(−βt)`) that ignore each other and the waves.
+- Adding "memory" through more uniforms makes every pixel's formula longer and more expensive. The approach scales in the wrong direction.
+
+### 2. What the profiling revealed
+
+**Measured** (Apple M2, Chromium via ANGLE/Metal, `EXT_disjoint_timer_query_webgl2`, one draw per frame):
+
+| Finding | Value |
+|---------|-------|
+| Full fragment shader at 1920×1080 | ~9.0 ms |
+| Fine caustic network (2 Worley passes + 5 value-noise calls) | ~6.9 ms (**~77%** of fragment time) |
+| Fragment shader with caustics removed | ~2.1 ms |
+| Second Worley pass alone | ~2.6 ms |
+| 4× MSAA on a full-frame plane | +2.7 ms (+27%), no visible benefit (no silhouette edges) |
+| Vertex stage (80×80 grid, height evaluated 5× per vertex) | ~0.2 ms |
+| Fresnel + specular + color model + soft streaks combined | ~1.5 ms above bare fill |
+| Live page, 1706×1544 buffer (2.63 MP) | ~10–11 ms GPU, 60 fps |
+| Idle vs hover vs 4 active ripples | no measurable difference |
+| Shader compile + link | ~200 ms uncached, ~15 ms cached |
+
+**Known from code:** DPR capped at 2 for every device; no quality ladder, adaptive resolution, or effect downgrade; full-quality shader starts immediately; no fallback if WebGL context creation fails; the 80×80 grid undersamples higher turbulence and stretches along the long axis in portrait (visible faceting).
+
+**Inferred (not measured):**
+- Full-screen 13" Retina (~5.6 MP) → ~21–34 ms per frame, i.e. 30–45 fps even on an M2.
+- Mid-range phones → roughly 25–80 ms per frame.
+- The Lighthouse "page stopped responding" failure is most plausibly headless Chrome running WebGL through a software rasterizer (SwiftShader), executing this shader on the CPU every frame. Not confirmed by a Lighthouse run.
+
+**Controls:** "great at default, bad quickly" comes from shading thresholds tuned to the default slope/height range (`smoothstep` slope gates, `vHeight × 9` / `× 14`, `NdotV^11.5` Fresnel expansion), deliberately amplified mappings (×2.8, ×6, `^1.65`), a glassy↔turbulent default at only 14% of its travel, additive light with a hard `clamp` and no tone mapping, and ambient / specular colors hard-coded cyan regardless of the chosen hex.
+
+### 3. Why Three.js / WebGL2 is retained
+
+- The renderer, camera, and one-draw pipeline were measured as **sound**. The cost is in shader *content*, not the framework.
+- WebGL2 provides what a simulation needs: float / half-float render targets and multi-pass ping-pong through `WebGLRenderTarget`.
+- Keeping it preserves Vite, Vercel, the app shell, the control panel, and the input code — avoiding an unnecessary rewrite.
+
+### 4. Why the water core is being replaced
+
+- A low-resolution GPU heightfield (discrete wave equation + damping) gives real shared state for roughly 0.1–0.5 ms per step *(inferred)*: propagation, interference, trails, natural decay, and direct pointer writes.
+- Height and normals come from a texture sampled bilinearly at full resolution instead of being interpolated across an 80×80 vertex grid, removing the grid faceting.
+- A simulation exposes physically meaningful parameters (wave speed, damping, injected energy) that semantic controls can map onto cleanly, instead of one slider fanning out to ~14 coupled uniforms.
+
+### 5. Why caustics will later be rebuilt more cheaply
+
+- They are the dominant GPU cost (~77% of fragment time) and the main mobile and Lighthouse risk.
+- They are only loosely coupled to the surface: the surface nudges where the web is sampled (~0.015 world units under the cursor vs ~0.5-unit cells), but a ripple cannot carve the web.
+- The approved look is a **parameter set and design** — Worley F2−F1 lines, brighter intersections, varying thickness, palette-derived tints — not an engine. It can be rebuilt at ≤ ~1/3 of the cost with simulated normals driving the warp.
+- They are rebuilt only after the new surface exists (Replacement Roadmap Stage E), so they are designed around the real surface rather than the old one.
+
+### 6. Existing visual work being preserved
+
+Regardless of implementation, these must survive the replacement:
+
+- **Palette:** `#2a7a9c` / `#3f9bb8` / `#6bc4d4`; `derivePalette` with `MID_OFFSET` / `SHALLOW_OFFSET`; the HSL formulas that derive `uCausticTint` / `uCausticHot` from the shallow stop.
+- **Color-space behavior:** palette colors are written via `setRGB` / `setHSL` (no sRGB→linear conversion), while `LIGHT` hex colors *are* linear-converted by Three.js. A port must reproduce this mix or the approved colors will shift.
+- **Lighting and optics:** `LIGHT` and `OPTICS` values — dual-lobe Blinn-Phong specular, Schlick Fresnel with `fresnelViewContrast` 11.5 (the top-down Fresnel fix), reflective ↔ translucent blend, normal-tied distortion, color-depth model.
+- **Caustic visual reference:** `CAUSTIC_NET` baseline (intensity 1.10, scale 2.0, sharpness 0.375, warp 0.42, speed 0, soft 0.13), `CAUSTIC_CLAMPS`, the Worley F2−F1 design, and a golden reference screenshot captured before Stage A.
+- **Macro surface character:** `WAVE_A`–`WAVE_D` directions / frequencies and `NOISE` scales, as the target for idle motion.
+- **Input handling:** `clientToWorld`, Pointer Events + Touch Events fallback, single-touch logic, `TAP_MOVE_THRESHOLD`, `setSuppressed` during UI use, reduced-motion attenuation.
+- **App shell:** orthographic top-down camera and aspect framing (`resize.js`), visibility pause, `dt` clamp, skipping wall-clock time while hidden.
+- **Public UI:** axis names (calm ↔ restless, glassy ↔ turbulent, reflective ↔ translucent, light, hex), panel UX (corner icon, collapsed by default), reset every visit.
+
+### 7. New intended rendering pipeline
+
+```mermaid
+flowchart LR
+  Input["pointer.js input"] --> Splats["Disturbance splats"]
+  Splats --> SimStep["Sim step: low-res ping-pong heightfield, wave eq + damping"]
+  IdleSrc["Idle life source"] --> SimStep
+  SimStep --> HeightTex["Height texture"]
+  HeightTex --> Normals["Normals from height"]
+  Normals --> Caustics["Cheap procedural caustics, optionally half-res"]
+  HeightTex --> Composite["Full-res composite quad: palette, depth, light, Fresnel, spec, distortion"]
+  Normals --> Composite
+  Caustics --> Composite
+  Params["params.js semantic mappings"] --> SimStep
+  Params --> Composite
+  Composite --> Screen["Screen, no MSAA, tiered DPR"]
+```
+
+Per frame:
+
+1. **Input** — `pointer.js` converts pointer / touch into queued disturbance splats (position, radius, strength from velocity).
+2. **Simulation** — N fixed-timestep substeps on a low-res, aspect-matched ping-pong heightfield (half-float): wave equation + damping + splats + idle life source.
+3. **Normals** — derived from the height texture (central differences), inline or as a small pass.
+4. **Caustics** — cheap procedural field warped by simulated normals; optionally rendered at reduced resolution.
+5. **Composite** — one full-screen quad at display resolution: palette / depth color, lighting, Fresnel, specular, distortion, caustic contribution.
+6. **Screen** — no MSAA; device pixel ratio chosen by a quality tier.
+
+**Expected module layout** (created incrementally, stage by stage):
+
+| File | Role | Stage |
+|------|------|-------|
+| `src/sim/createWaterSim.js` | Render targets, step, splat queue, resize | A–B |
+| `src/shaders/sim/simStep.frag.glsl` | Wave equation, damping, splats | A–B |
+| `src/shaders/fullscreen.vert.glsl` | Shared full-screen quad vertex | A |
+| `src/shaders/simDebug.frag.glsl` | Height / normal debug views | A–C |
+| `src/render/createSurfaceComposite.js` | Full-screen composite material wiring | D |
+| `src/shaders/surface.frag.glsl` | Ported shading consuming sim height / normals | D |
+| `src/render/lookConstants.js` | Palette, `LIGHT`, `OPTICS`, `CAUSTIC_NET` moved out of `createWaterMesh.js` | D |
+| `src/shaders/caustics.glsl` (+ optional `src/render/createCausticPass.js`) | Rebuilt caustics | E |
+| `src/render/quality.js` | Tiers, capability detection, frame-time monitor | F |
+
+Modified along the way: `src/app/createApp.js` (sim step in loop, flags), `src/app/resize.js` (sim resize, DPR tiers), `src/interaction/pointer.js` (output becomes splats), `src/controls/params.js` (Stage G). Expected unchanged: `src/controls/panel.js`, `src/render/camera.js`, `src/app/visibility.js`, `index.html`, `vite.config.js`, `vercel.json`. Retired only after Stage E approval (owner decides): `src/render/createWaterMesh.js`, `src/shaders/water.vert.glsl`, `src/shaders/water.frag.glsl`, possibly `createCausticStudyGui` in `devGui.js`.
+
+---
+
+# Replacement Roadmap
+
+**Process rules (binding):**
+
+- One stage at a time. **Never implement multiple stages without approval.**
+- Every stage ends in a small, working, evaluable result — then **STOP** for owner feedback.
+- No giant rewrite: the old pipeline keeps working until the new one earns its place.
+- During Stages A–C the new pipeline lives behind a `?sim` URL flag; the public app stays unchanged.
+- From Stage D the new pipeline becomes the default; the old one stays reachable via `?legacy` for side-by-side comparison until Stage E is approved.
+- Old files are retired only with explicit owner approval.
+
+**Prerequisite before Stage A:** capture a golden reference screenshot of the current build at default settings (desktop landscape + phone portrait) and record the current performance baseline (~10 ms GPU at 2.63 MP on the M2). Every later visual comparison is made against these.
+
+**Relationship to the original phases:** Phases 0–6.5 are complete and define the visual target. Phases 7–10 are paused. Phase 7 (idle calm) is absorbed by simulation damping and the Stage D idle source; Phases 8–9 (mobile, performance) are partly absorbed by Stage F; remaining Phase 8 items (reduced-motion choices, keyboard shortcut, orientation testing) and Phase 10 (polish) resume after Stage G.
+
+### Stage A — Simulation proof of concept
+
+**Goal:** Prove a stateful low-res heightfield runs cheaply and stably in this stack.
+
+**Implements:**
+- Ping-pong half-float render targets, aspect-matched to the viewport.
+- Wave-equation step with damping, driven by a fixed-timestep accumulator.
+- Dev-only automatic test drops (random positions on a timer).
+- Debug view: full-screen quad showing height as a color ramp.
+- Capability check for float / half-float render targets (clear console message if unsupported).
+- All behind `?sim`.
+
+**Does NOT implement:** pointer input, normals, lighting, palette, caustics, controls, quality tiers, removal of old code.
+
+**Exit criteria:**
+- Waves visibly propagate outward, interfere, and decay.
+- No numerical blowup after several minutes.
+- Same behavior at 30 / 60 / 120 Hz display rates (fixed timestep).
+- Sim step GPU time measured (target < ~0.5 ms on the M2).
+- Default app (no flag) is unchanged.
+
+**Evaluate:**
+- Simulation resolution: 128 / 192 / 256 on the long axis?
+- Wave speed and damping ranges that feel calm rather than bouncy.
+- Edge behavior: absorbing vs wrap — no visible box or reflections from screen edges.
+- Half-float render-target support on iOS Safari.
+- Do ripples still read as water when bilinearly upscaled?
+
+**STOP** — ask for evaluation.
+
+### Stage B — Pointer disturbance
+
+**Goal:** The user's touch writes into the shared water state.
+
+**Implements:**
+- Reuse `pointer.js` input handling (coordinates, touch fallback, single touch, suppression, reduced motion); replace its analytic-ripple output with disturbance splats.
+- Drag: splat along the full segment from previous to current position (no gaps); strength from velocity.
+- Tap: a stronger single impulse.
+- Still displayed through the debug view.
+
+**Does NOT implement:** analytic ripples (not carried into the new path), normals, shading, hold behavior, control remapping.
+
+**Exit criteria:**
+- Drags leave trails that persist and spread.
+- Taps ring outward; multiple taps interfere.
+- Slow vs fast gestures are clearly distinguishable.
+- Single-touch works on a real phone.
+- Response feels immediate (no smoothing lag in the splat path).
+
+**Evaluate:**
+- Splat shape (Gaussian vs soft disc) and sign (push down vs lift).
+- Does hover proximity (no press) stay, and how gently?
+- Velocity curve and cap.
+- Maximum injected energy that still feels calm.
+
+**STOP** — ask for interaction feedback.
+
+### Stage C — Simulation-driven normals
+
+**Goal:** Smooth full-resolution normals derived from the height texture.
+
+**Implements:**
+- Central-difference normals from the height texture — inline in the full-res shader or as a separate normal pass at sim resolution, whichever compares better.
+- A single normal-strength scalar.
+- Debug views: normal visualization + a plain N·L directional light.
+
+**Does NOT implement:** palette, Fresnel, specular, distortion, caustics.
+
+**Exit criteria:**
+- No texel blockiness or stair-stepping at full resolution on desktop or phone.
+- Ripples read as smooth, lens-like bumps.
+- The old 80×80 grid faceting is gone (including portrait).
+
+**Evaluate:**
+- Bilinear vs bicubic height sampling.
+- Is sim resolution enough for fine ripples, or is a small procedural fine-normal detail needed?
+- Inline normals vs separate pass (cost and quality).
+
+**STOP** — ask for visual feedback.
+
+### Stage D — Reconnect existing visual shading
+
+**Goal:** The new surface wears the approved look (without caustics).
+
+**Implements:**
+- New full-screen composite (`surface.frag.glsl`) porting the shading stage of `water.frag.glsl`: height / slope color, dual-lobe lighting, Fresnel with the view-contrast fix, reflective ↔ translucent blend, distortion, color depth, soft streaks.
+- Consumes sim height and normals instead of `vHeight` / `vNormal`.
+- Normalize sim height / slope into the ranges the approved thresholds expect.
+- Choose and add an idle life source.
+- Move approved constants out of `createWaterMesh.js` into `lookConstants.js`.
+- Wire the existing panel through the current mappings (temporarily; may misbehave off-default until Stage G).
+- New pipeline becomes the default; `?legacy` stays available.
+
+**Does NOT implement:** caustic rebuild (the legacy caustic function may be toggled under a debug flag purely for comparison), mapping rework, quality tiers.
+
+**Exit criteria:**
+- Side by side with the golden reference at defaults: body color, depth, highlights, and Fresnel read as the same family.
+- Idle feels gently alive, not flat.
+- Touches visibly change the lighting (the "weak" problem is solved).
+- GPU cost measured.
+
+**Evaluate:**
+- Idle source: cheap procedural macro layer added in the composite, or gentle forcing injected into the simulation?
+- Height / slope normalization values.
+- Does the look drift because slope statistics differ from the old surface?
+
+**STOP** — ask for visual feedback.
+
+### Stage E — Rebuild caustics around the new surface
+
+**Goal:** The approved caustic look at a fraction of the cost, visibly bent by ripples.
+
+**Implements:**
+- Cheaper procedural caustic field: `sin`-free hash, one Worley pass (a second only if needed), fewer value-noise calls.
+- Warp driven by simulated normals, strong enough that ripples carve the web.
+- Optional reduced-resolution (e.g. half-res) caustic target, upsampled.
+- Palette-derived caustic tints preserved.
+
+**Does NOT implement:** physically traced caustics (photon / refraction mesh), quality-tier tuning.
+
+**Exit criteria:**
+- Close to the golden reference: thin branching lines, brighter intersections, varying thickness, no tiling / grid / zebra look.
+- Cost ≤ ~1/3 of the old ~6.9 ms at 1080p on the M2.
+- Ripples visibly bend the caustics.
+- No shimmer on phones.
+- `?legacy` can then be retired (owner approval).
+
+**Evaluate:**
+- Is reduced resolution crisp enough?
+- One vs two Worley layers.
+- Independent caustic animation (the old default speed was 0) or surface-driven only?
+- Coupling strength between ripples and the web.
+- A physically inspired alternative that follows where simulated normals converge.
+
+**STOP** — ask for visual feedback.
+
+### Stage F — Performance / quality ladder
+
+**Goal:** Stable frame rates on every device; Lighthouse completes.
+
+**Implements:**
+- Quality tiers (`quality.js`): DPR caps, sim resolution, caustic resolution / layers.
+- MSAA off.
+- Start at a conservative tier and step up; runtime frame-time monitor with hysteresis steps down.
+- Half-float fallback path.
+- WebGL failure and context-loss fallback (static deep-color background).
+- Software-renderer detection → lowest tier.
+
+**Does NOT implement:** new visuals, control remapping.
+
+**Exit criteria:**
+- 60 fps full-screen on an M2 MacBook Air.
+- ≥ 30 fps on a real mid-range phone.
+- Lighthouse completes a run.
+- Tier changes cause no visible pops.
+
+**Evaluate:**
+- Tier boundaries (pixel count, frame time).
+- Are tier switches noticeable?
+- Is a user-facing low-power option needed?
+
+**STOP** — report measurements.
+
+### Stage G — Rebuild semantic control mappings
+
+**Goal:** Every slider position looks intentional.
+
+**Implements:**
+- calm ↔ restless → idle energy, wave speed, pointer strength.
+- glassy ↔ turbulent → damping, fine detail / normal strength, caustic warp.
+- reflective ↔ translucent → optical balance, Fresnel, color depth.
+- light → illumination with soft tone mapping instead of a hard clamp.
+- hex → palette plus palette-derived ambient / specular tints (fixes muddy warm colors).
+- Normalized shading so thresholds don't saturate at slider extremes.
+- Defaults placed sensibly along each slider (not at 14% of travel).
+
+**Does NOT implement:** new axes (warm ↔ cool stays omitted unless re-decided), settings persistence.
+
+**Exit criteria:**
+- Screenshots at min / default / max for every axis, plus pairwise extremes, are all acceptable.
+- No wash-out, posterization, or faceting at any setting.
+- Warm and unusual hex colors look clean.
+
+**Evaluate:**
+- Default positions and ranges.
+- Whether to reintroduce warm ↔ cool.
+
+**STOP** — ask for UX feedback.
+
+---
+
 ## Development Rules
 
 1. Never implement multiple roadmap phases without asking.  
@@ -549,6 +880,7 @@ After each phase: summarize changes, explain important shader math in plain Engl
 | 2026-09-20 | **Roadmap pause before Phase 7.** Owner not yet satisfied with core visual vs references — missing fine interconnected caustic light networks. Soft `softCaustics` diagnosed as mid-scale normal/lighting brightening only (broad ridges), not a caustic field. **Phase 6.5 — Caustic Study** inserted: dedicated procedural fine caustic network (domain-warped multi-scale Worley F2−F1 ridges), macro water preserved, DEV-only tuning, no Phase 7 until visual feedback. |
 | 2026-09-20 | **Phase 6.5 baseline locked + semantic mapping.** Approved caustic defaults: intensity 1.10, scale 2.0, sharpness 0.375, warp 0.42, speed 0, soft 0.130. Public axes derive offsets around baseline via `deriveCausticParams` (no public caustic slider). Density/scale internal. Palette-derived caustic tints. DEV panel shows live derived values; ephemeral overrides until public sync. Awaiting min/default/max slider visual approval before Phase 7. |
 | 2026-09-20 | Phase 6.5 caustic study Tweakpane **unmounted** after mapping approval. Public Fluid panel is the sole UI; `createCausticStudyGui` kept in `devGui.js` for optional future retuning. |
+| 2026-09-29 | **Architecture profiling complete → partial architectural replacement.** Keep Vite, Three.js / WebGL2, orthographic top-down camera, Vercel, app shell, palette, lighting / optics ideas, public UI concept, reusable input handling; current caustics kept as visual reference. Replace the stateless procedural surface, the analytic ripple system, and the full-res caustic implementation with: low-res GPU water simulation + full-res visual composite + cheaper procedural caustics. Phases 7–10 paused; work proceeds through Replacement Roadmap Stages A–G, one stage at a time with approval. |
 
 ---
 
@@ -563,7 +895,11 @@ After each phase: summarize changes, explain important shader math in plain Engl
 - **Surface fine-scale / caustic frequency** — Phase 6.5 adds a dedicated high-frequency optical field without rewriting Phase 2 displacement.  
 - **Orthographic vs perspective** top-down implementation detail (both can read as strict top-down; choose in Phase 0/1 for simplest framing).  
 - Whether any **splash**, **multi-touch**, or **audio** experiments earn a place after MVP feel tests.  
-- Exact **DPR caps** and mobile effect ladder (decide with Phase 8–9 measurements).  
+- Exact **DPR caps** and mobile effect ladder (decide with Phase 8–9 measurements; now Stage F).  
+- **Simulation resolution** — 128 / 192 / 256 on the long axis (Stage A).  
+- **Simulation edge behavior** — absorbing vs wrap so screen edges never read as walls (Stage A).  
+- **Idle life source** — procedural macro layer in the composite vs gentle forcing injected into the simulation (Stage D).  
+- **Hover proximity** under the new model — keep a gentle hover disturbance or press-only (Stage B).  
 
 ---
 
