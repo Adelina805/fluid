@@ -12,10 +12,20 @@ import {
   supportsSimTargets,
 } from '../sim/createWaterSim.js';
 import fullscreenVertexShader from '../shaders/fullscreen.vert.glsl?raw';
+import simSurfaceShaderChunk from '../shaders/sim/simSurface.glsl?raw';
 import simDebugFragmentShader from '../shaders/simDebug.frag.glsl?raw';
 
 /** Height → grayscale multiplier for the debug view (`?gain=` overrides). */
 const DEBUG_GAIN = 2.5;
+
+/**
+ * Slope (height per sim texel) → normal tilt in the normal view (`?normalStrength=` overrides).
+ * Dev only; retuned when lighting returns.
+ */
+const DEBUG_NORMAL_STRENGTH = 6;
+
+/** Safe range for the normal-strength override. */
+const MAX_NORMAL_STRENGTH = 16;
 
 /** Seconds between console stat lines. */
 const STATS_INTERVAL = 2;
@@ -86,10 +96,12 @@ function createGpuTimer(gl) {
 }
 
 /**
- * `?sim` entry: low-res wave simulation shown as a grayscale height view, disturbed
- * by pointer / touch (Stage B). Independent of the approved water mesh and control panel.
+ * `?sim` entry: low-res wave simulation shown as a grayscale height view (or, with
+ * `normals`, RGB-encoded sim normals), disturbed by pointer / touch (Stage B).
+ * Independent of the approved water mesh and control panel.
  *
- * Dev URL options: `debugPadding` (show sponge margin), `gain=<n>`, `simFps=<n>` (throttle render loop),
+ * Dev URL options: `normals` (normal view), `cubic` (B-spline height sampling),
+ * `normalStrength=<n>`, `debugPadding` (show sponge margin), `gain=<n>`, `simFps=<n>` (throttle render loop),
  * `testImpulses` (replay the Stage A impulses). Console: `__fluidSim.impulse(x, y, amplitude, radius)`.
  * @param {HTMLElement} root
  */
@@ -97,6 +109,12 @@ export function createSimDebugApp(root) {
   const query = new URLSearchParams(window.location.search);
   const showPadding = query.has('debugPadding');
   const gain = Number(query.get('gain')) || DEBUG_GAIN;
+  const showNormals = query.has('normals');
+  const cubicHeight = query.has('cubic');
+  const requestedStrength = Number(query.get('normalStrength'));
+  const normalStrength = query.has('normalStrength') && Number.isFinite(requestedStrength)
+    ? Math.min(Math.max(requestedStrength, 0), MAX_NORMAL_STRENGTH)
+    : DEBUG_NORMAL_STRENGTH;
   const throttleFps = Number(query.get('simFps')) || 0;
   const replayTestImpulses = query.has('testImpulses');
 
@@ -124,14 +142,17 @@ export function createSimDebugApp(root) {
 
   const debugMaterial = new ShaderMaterial({
     vertexShader: fullscreenVertexShader,
-    fragmentShader: simDebugFragmentShader,
+    fragmentShader: `${simSurfaceShaderChunk}\n${simDebugFragmentShader}`,
     uniforms: {
       uState: { value: null },
       uGridSize: { value: new Vector2(1, 1) },
       uPadding: { value: SIM_EDGE_PADDING },
       uGain: { value: gain },
       uShowPadding: { value: showPadding ? 1 : 0 },
+      uView: { value: showNormals ? 1 : 0 },
+      uNormalStrength: { value: normalStrength },
     },
+    defines: cubicHeight ? { SIM_CUBIC: '' } : {},
     depthTest: false,
     depthWrite: false,
   });
@@ -139,6 +160,11 @@ export function createSimDebugApp(root) {
   debugQuad.frustumCulled = false;
   const debugScene = new Scene();
   debugScene.add(debugQuad);
+  console.info(
+    showNormals
+      ? `[sim] view: normals (strength ${normalStrength}, ${cubicHeight ? 'cubic B-spline' : 'bilinear'} height)`
+      : '[sim] view: height',
+  );
 
   window.__fluidSim = {
     sim,
