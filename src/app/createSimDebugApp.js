@@ -3,6 +3,7 @@ import { bindResize } from './resize.js';
 import { bindVisibility } from './visibility.js';
 import { createTopDownCamera } from '../render/camera.js';
 import { COLOR_DEEP } from '../render/createWaterMesh.js';
+import { createSimPointer } from '../interaction/simPointer.js';
 import {
   MAX_STEPS_PER_FRAME,
   SIM_EDGE_PADDING,
@@ -24,6 +25,15 @@ const MAX_FRAME_DT = 0.1;
 
 /** Resize settle time before the sim grid is rebuilt (ms). */
 const RESIZE_DEBOUNCE_MS = 150;
+
+/**
+ * Stage A test disturbances, replayed only with `?testImpulses`.
+ * `delay` in seconds of sim time; `x` / `y` in visible-area UV (y up); `radius` in texels.
+ */
+const TEST_IMPULSES = [
+  { delay: 0, x: 0.5, y: 0.5, radius: 6, amplitude: 1.0 },
+  { delay: 1.5, x: 0.63, y: 0.4, radius: 6, amplitude: 1.0 },
+];
 
 /**
  * GPU pass timing via EXT_disjoint_timer_query_webgl2 (dev only).
@@ -76,10 +86,11 @@ function createGpuTimer(gl) {
 }
 
 /**
- * Stage A `?sim` entry: low-res wave simulation shown as a grayscale height view.
- * Independent of the approved water mesh, pointer, and control panel.
+ * `?sim` entry: low-res wave simulation shown as a grayscale height view, disturbed
+ * by pointer / touch (Stage B). Independent of the approved water mesh and control panel.
  *
- * Dev URL options: `debugPadding` (show sponge margin), `gain=<n>`, `simFps=<n>` (throttle render loop).
+ * Dev URL options: `debugPadding` (show sponge margin), `gain=<n>`, `simFps=<n>` (throttle render loop),
+ * `testImpulses` (replay the Stage A impulses). Console: `__fluidSim.impulse(x, y, amplitude, radius)`.
  * @param {HTMLElement} root
  */
 export function createSimDebugApp(root) {
@@ -87,6 +98,7 @@ export function createSimDebugApp(root) {
   const showPadding = query.has('debugPadding');
   const gain = Number(query.get('gain')) || DEBUG_GAIN;
   const throttleFps = Number(query.get('simFps')) || 0;
+  const replayTestImpulses = query.has('testImpulses');
 
   const camera = createTopDownCamera();
   const renderer = new WebGLRenderer({
@@ -106,6 +118,9 @@ export function createSimDebugApp(root) {
   }
 
   const sim = createWaterSim(renderer);
+  const pointer = createSimPointer({ canvas: renderer.domElement, sim });
+
+  const pendingTestImpulses = replayTestImpulses ? [...TEST_IMPULSES] : [];
 
   const debugMaterial = new ShaderMaterial({
     vertexShader: fullscreenVertexShader,
@@ -124,6 +139,17 @@ export function createSimDebugApp(root) {
   debugQuad.frustumCulled = false;
   const debugScene = new Scene();
   debugScene.add(debugQuad);
+
+  window.__fluidSim = {
+    sim,
+    /** Dev-only manual impulse; UV coordinates, y up. */
+    impulse: (x = 0.5, y = 0.5, amplitude = 1.0, radius = 6) => sim.addImpulse(x, y, radius, amplitude),
+    /** Dev-only: draw the current state immediately (for scripted captures). */
+    render: () => {
+      debugMaterial.uniforms.uState.value = sim.getTexture();
+      renderer.render(debugScene, camera);
+    },
+  };
 
   const rebuildSim = () => {
     sim.resize(window.innerWidth, window.innerHeight);
@@ -157,7 +183,11 @@ export function createSimDebugApp(root) {
   let statsClock = 0;
   let framesSinceStats = 0;
   let stepsSinceStats = 0;
-  let simFramesSinceStats = 0;
+  /** Frames / steps split by whether the frame's first step carried queued input. */
+  let idleSimFrames = 0;
+  let idleSimSteps = 0;
+  let inputSimFrames = 0;
+  let inputSimSteps = 0;
 
   function logStats(seconds) {
     const readIndex = sim.getReadIndex();
@@ -165,15 +195,20 @@ export function createSimDebugApp(root) {
     const alternating = readIndex === stepCount % 2;
     const gpu = gpuTimer ? gpuTimer.takeAverages() : {};
     const { maxHeight, maxVelocity, energy, nanCount } = sim.readStats();
+    const inputCounts = sim.takeInputCounts();
+    const perStep = (frameMs, frames, steps) => (frameMs != null && steps > 0 ? (frameMs * frames) / steps : null);
     const stats = {
       fps: framesSinceStats / seconds,
       stepsPerSecond: stepsSinceStats / seconds,
       stepCount,
       reading: readIndex === 0 ? 'A' : 'B',
       alternating,
-      gpuSimMsPerFrame: gpu.sim ?? null,
-      gpuSimMsPerStep: gpu.sim != null ? (gpu.sim * simFramesSinceStats) / Math.max(stepsSinceStats, 1) : null,
+      gpuSimMsPerStep: perStep(gpu.sim, idleSimFrames, idleSimSteps),
+      gpuSimInputMsPerStep: perStep(gpu.simInput, inputSimFrames, inputSimSteps),
       gpuDebugMs: gpu.debug ?? null,
+      segmentsPerSecond: inputCounts.segments / seconds,
+      impulsesPerSecond: inputCounts.impulses / seconds,
+      inputCpuMsPerSecond: pointer.takeInputCpuMs() / seconds,
       maxHeight,
       maxVelocity,
       energy,
@@ -185,10 +220,17 @@ export function createSimDebugApp(root) {
     console.info(
       `[sim] fps ${stats.fps.toFixed(1)} | steps/s ${stats.stepsPerSecond.toFixed(1)} | step #${stepCount}` +
         ` | reading ${stats.reading} (${alternating ? 'ping-pong ok' : 'PING-PONG MISMATCH'})` +
-        // The first query of a frame also absorbs frame-start overhead, so this is an upper bound.
-        ` | GPU sim ≤${ms(stats.gpuSimMsPerStep)}/step, debug ${ms(stats.gpuDebugMs)}` +
+        // The first query of a frame also absorbs frame-start overhead, so these are upper bounds.
+        ` | GPU sim ≤${ms(stats.gpuSimMsPerStep)}/step idle, ≤${ms(stats.gpuSimInputMsPerStep)}/step with input` +
+        `, debug ${ms(stats.gpuDebugMs)}` +
+        ` | input ${stats.segmentsPerSecond.toFixed(0)} seg/s ${stats.impulsesPerSecond.toFixed(1)} imp/s` +
+        ` cpu ${stats.inputCpuMsPerSecond.toFixed(3)} ms/s` +
         ` | max|h| ${maxHeight.toFixed(4)} max|v| ${maxVelocity.toFixed(4)} energy ${energy.toExponential(2)} NaN ${nanCount}`,
     );
+    idleSimFrames = 0;
+    idleSimSteps = 0;
+    inputSimFrames = 0;
+    inputSimSteps = 0;
   }
 
   const renderFrame = (now) => {
@@ -207,10 +249,23 @@ export function createSimDebugApp(root) {
     if (accumulator >= stepDt) accumulator = 0;
 
     if (steps > 0) {
-      gpuTimer?.begin('sim');
+      const stepCount = sim.getStepCount();
+      while (pendingTestImpulses.length > 0 && Math.round(pendingTestImpulses[0].delay * SIM_STEP_HZ) <= stepCount) {
+        const { x, y, radius, amplitude } = pendingTestImpulses.shift();
+        sim.addImpulse(x, y, radius, amplitude);
+      }
+
+      const withInput = sim.hasQueuedInput();
+      gpuTimer?.begin(withInput ? 'simInput' : 'sim');
       sim.advance(steps);
       gpuTimer?.end();
-      simFramesSinceStats += 1;
+      if (withInput) {
+        inputSimFrames += 1;
+        inputSimSteps += steps;
+      } else {
+        idleSimFrames += 1;
+        idleSimSteps += steps;
+      }
     }
 
     debugMaterial.uniforms.uState.value = sim.getTexture();
@@ -227,7 +282,6 @@ export function createSimDebugApp(root) {
       statsClock = 0;
       framesSinceStats = 0;
       stepsSinceStats = 0;
-      simFramesSinceStats = 0;
     }
   };
 
@@ -253,6 +307,8 @@ export function createSimDebugApp(root) {
     sim,
     dispose() {
       loop.stop();
+      pointer.dispose();
+      delete window.__fluidSim;
       unbindResize();
       unbindVisibility();
       clearTimeout(resizeTimer);

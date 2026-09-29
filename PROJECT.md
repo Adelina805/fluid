@@ -599,6 +599,7 @@ Per frame:
 | `src/shaders/sim/simStep.frag.glsl` | Wave equation, damping, splats | A–B |
 | `src/shaders/fullscreen.vert.glsl` | Shared full-screen quad vertex | A |
 | `src/shaders/simDebug.frag.glsl` | Height / normal debug views | A–C |
+| `src/interaction/simPointer.js` | Pointer / touch → sim segments and impulses (`?sim` path; `pointer.js` stays for the default app) | B |
 | `src/render/createSurfaceComposite.js` | Full-screen composite material wiring | D |
 | `src/shaders/surface.frag.glsl` | Ported shading consuming sim height / normals | D |
 | `src/render/lookConstants.js` | Palette, `LIGHT`, `OPTICS`, `CAUSTIC_NET` moved out of `createWaterMesh.js` | D |
@@ -905,6 +906,8 @@ The portrait capture uses DPR 1.8 rather than 3 because the emulation surface co
 | 2026-09-29 | **Architecture profiling complete → partial architectural replacement.** Keep Vite, Three.js / WebGL2, orthographic top-down camera, Vercel, app shell, palette, lighting / optics ideas, public UI concept, reusable input handling; current caustics kept as visual reference. Replace the stateless procedural surface, the analytic ripple system, and the full-res caustic implementation with: low-res GPU water simulation + full-res visual composite + cheaper procedural caustics. Phases 7–10 paused; work proceeds through Replacement Roadmap Stages A–G, one stage at a time with approval. |
 | 2026-09-29 | Golden reference captured before Stage A (desktop 1440×900 + phone 390×844) with the profiling numbers restated as the performance baseline — see [Golden Reference Baseline](#golden-reference-baseline). |
 | 2026-09-29 | **Stage A implemented (awaiting owner evaluation).** `?sim` only (dynamic import; default app untouched). Ping-pong RGBA half-float targets (R = height, G = velocity), aspect-matched grid with `SIM_RESOLUTION` = 256 visible texels on the long axis. Damped 2D wave equation: isotropic 9-point Laplacian + symplectic Euler, Courant 0.5 (~30 texels/s), fixed 60 Hz step with accumulator (max 4 steps/frame). Velocity damping 0.996/step, height relax 0.9995/step, safety clamp ±8. Edges: off-screen absorbing sponge — 48-texel margin ramping quadratically to ×0.96/step (chosen by a reflection sweep; 16 texels / ×0.8 reflected visibly). Test disturbance per owner: two fixed Gaussian impulses (center at t=0, offset at t=1.5 s) instead of random timed drops. Measured on M2: ~0.05 ms GPU per step (352×241 grid), energy decays to ~1e-9 with no NaNs over 45 s, identical results at 30 and 60 fps. |
+| 2026-09-29 | **Stage A approved** (owner saw propagation, interference, decay, stability). |
+| 2026-09-29 | **Stage B implemented (awaiting owner evaluation).** `?sim` only; test impulses now opt-in (`?testImpulses`, `__fluidSim.impulse()`). New `src/interaction/simPointer.js` (event plumbing mirrors `pointer.js`; `pointer.js` and the default app untouched). One shared state: every sample becomes a segment queued in visible-area UV and applied on the next fixed step (max 16 segments + 4 impulses per step; queue dropped after 250 ms or on resize so a stalled loop never dumps a backlog). **Movement → velocity**: soft capsule, Gaussian across travel (3.5→4.5 texels, ×1.15 on contact), narrow along travel (0.5 texel, erf coverage) so consecutive segments sum exactly (no beads, event-rate independent) and each texel is kicked in a few steps — slow strokes leave a spreading wake instead of a dimple that follows the cursor. **Zero-volume brushes** (core minus a 2× wider equal-volume rim) — without it pushed-down volume pooled into a screen-wide depression. **Push-depth limit** (brush adds less where surface already pushed its way > 2× its strength) caps resonance when the pointer moves at wave speed (~0.12 screens/s). **Velocity curve**: `3·tanh((0.6 + speed^0.65)/3)` (speed in long-axis screens/s), 10 ms speed smoothing only (positions unsmoothed). **Hover ×0.35 vs contact ×1.0**, eased 25 ms attack / 80 ms release on event timestamps; touch = contact. **Press-down impulse** (fires on pointerdown/touchstart): zero-volume Gaussian height, radius 5 texels, amplitude −0.4. Measured contact peak |h| 0.03 / 0.32 / 0.29 / 0.39 / 0.53 / 0.66 at 0.06 / 0.12 / 0.5 / 1 / 2 / 4 screens/s; tap 0.29. GPU: realistic input within noise of idle (~0.05–0.1 ms/step), synthetic worst case (16 full-width segments every step) +0.15–0.3 ms; CPU ~8 µs per event. |
 
 ---
 
@@ -923,7 +926,7 @@ The portrait capture uses DPR 1.8 rather than 3 because the emulation surface co
 - **Simulation resolution** — 128 / 192 / 256 on the long axis (Stage A).  
 - **Simulation edge behavior** — absorbing vs wrap so screen edges never read as walls (Stage A).  
 - **Idle life source** — procedural macro layer in the composite vs gentle forcing injected into the simulation (Stage D).  
-- **Hover proximity** under the new model — keep a gentle hover disturbance or press-only (Stage B).  
+- **Hover proximity** under the new model — Stage B implements gentle moving-hover (×0.35 of contact); a still pointer adds nothing. Confirm by feel.  
 
 ---
 
