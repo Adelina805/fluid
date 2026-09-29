@@ -622,6 +622,28 @@ Modified along the way: `src/app/createApp.js` (sim step in loop, flags), `src/a
 
 **Prerequisite before Stage A:** capture a golden reference screenshot of the current build at default settings (desktop landscape + phone portrait) and record the current performance baseline (~10 ms GPU at 2.63 MP on the M2). Every later visual comparison is made against these.
 
+### Golden Reference Baseline
+
+*Captured 2026-09-29, before any Stage A code. Current approved build (Phases 0–6.5), default public controls, no interaction.*
+
+| View | File | Capture |
+|------|------|---------|
+| Desktop landscape | [`src/images/golden-reference-desktop.png`](src/images/golden-reference-desktop.png) | 1440×900 CSS px @ DPR 2 (2880×1800), headless Chrome, ANGLE/Metal on M2 |
+| Phone portrait | [`src/images/golden-reference-portrait.png`](src/images/golden-reference-portrait.png) | 390×844 CSS px @ DPR 1.8 (702×1519), Chromium device emulation, ANGLE/Metal on M2 |
+
+The portrait capture uses DPR 1.8 rather than 3 because the emulation surface could not hold a larger framebuffer. Framing depends only on the CSS viewport (and the app caps DPR at 2 anyway), so the composition matches a real phone. The surface animates continuously, so compare *character* (palette, depth, highlight density, caustic web scale), not exact pixels.
+
+**Performance baseline** (from the 2026-09-29 profiling pass; Apple M2, Chromium via ANGLE/Metal, `EXT_disjoint_timer_query_webgl2`):
+
+| Measure | Value |
+|---------|-------|
+| Full fragment shader at 1920×1080 | ~9.0 ms |
+| Fine caustic network share | ~6.9 ms (~77% of fragment time) |
+| Fragment shader without caustics | ~2.1 ms |
+| 4× MSAA overhead | +2.7 ms |
+| Vertex stage (80×80 grid) | ~0.2 ms |
+| Live page, 1706×1544 buffer (2.63 MP) | ~10–11 ms GPU, 60 fps |
+
 **Relationship to the original phases:** Phases 0–6.5 are complete and define the visual target. Phases 7–10 are paused. Phase 7 (idle calm) is absorbed by simulation damping and the Stage D idle source; Phases 8–9 (mobile, performance) are partly absorbed by Stage F; remaining Phase 8 items (reduced-motion choices, keyboard shortcut, orientation testing) and Phase 10 (polish) resume after Stage G.
 
 ### Stage A — Simulation proof of concept
@@ -881,6 +903,8 @@ Modified along the way: `src/app/createApp.js` (sim step in loop, flags), `src/a
 | 2026-09-20 | **Phase 6.5 baseline locked + semantic mapping.** Approved caustic defaults: intensity 1.10, scale 2.0, sharpness 0.375, warp 0.42, speed 0, soft 0.130. Public axes derive offsets around baseline via `deriveCausticParams` (no public caustic slider). Density/scale internal. Palette-derived caustic tints. DEV panel shows live derived values; ephemeral overrides until public sync. Awaiting min/default/max slider visual approval before Phase 7. |
 | 2026-09-20 | Phase 6.5 caustic study Tweakpane **unmounted** after mapping approval. Public Fluid panel is the sole UI; `createCausticStudyGui` kept in `devGui.js` for optional future retuning. |
 | 2026-09-29 | **Architecture profiling complete → partial architectural replacement.** Keep Vite, Three.js / WebGL2, orthographic top-down camera, Vercel, app shell, palette, lighting / optics ideas, public UI concept, reusable input handling; current caustics kept as visual reference. Replace the stateless procedural surface, the analytic ripple system, and the full-res caustic implementation with: low-res GPU water simulation + full-res visual composite + cheaper procedural caustics. Phases 7–10 paused; work proceeds through Replacement Roadmap Stages A–G, one stage at a time with approval. |
+| 2026-09-29 | Golden reference captured before Stage A (desktop 1440×900 + phone 390×844) with the profiling numbers restated as the performance baseline — see [Golden Reference Baseline](#golden-reference-baseline). |
+| 2026-09-29 | **Stage A implemented (awaiting owner evaluation).** `?sim` only (dynamic import; default app untouched). Ping-pong RGBA half-float targets (R = height, G = velocity), aspect-matched grid with `SIM_RESOLUTION` = 256 visible texels on the long axis. Damped 2D wave equation: isotropic 9-point Laplacian + symplectic Euler, Courant 0.5 (~30 texels/s), fixed 60 Hz step with accumulator (max 4 steps/frame). Velocity damping 0.996/step, height relax 0.9995/step, safety clamp ±8. Edges: off-screen absorbing sponge — 48-texel margin ramping quadratically to ×0.96/step (chosen by a reflection sweep; 16 texels / ×0.8 reflected visibly). Test disturbance per owner: two fixed Gaussian impulses (center at t=0, offset at t=1.5 s) instead of random timed drops. Measured on M2: ~0.05 ms GPU per step (352×241 grid), energy decays to ~1e-9 with no NaNs over 45 s, identical results at 30 and 60 fps. |
 
 ---
 
