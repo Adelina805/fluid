@@ -30,12 +30,22 @@ export const SIM_HEIGHT_SCALE = 0.15;
  * @param {number} options.normalStrength Shared with the normal debug view.
  * @param {number} [options.debugOptics] 0 = composite; 1–4 = Fresnel / distortion / albedo / lighting.
  * @param {boolean} [options.cubicHeight] Cubic B-spline height sampling (default); false = bilinear.
+ * @param {{ chunk: string, defines: object, uniforms: object, apply: Function }} [options.devCaustics]
+ *   Dev-only caustic comparison path (Stage E0 harness); absent in normal use.
  */
-export function createSurfaceComposite({ padding, normalStrength, debugOptics = 0, cubicHeight = true }) {
+export function createSurfaceComposite({
+  padding,
+  normalStrength,
+  debugOptics = 0,
+  cubicHeight = true,
+  devCaustics = null,
+}) {
+  const causticChunk = devCaustics ? `${devCaustics.chunk}\n` : '';
   const material = new ShaderMaterial({
     vertexShader: fullscreenVertexShader,
-    fragmentShader: `${simSurfaceShaderChunk}\n${surfaceFragmentShader}`,
+    fragmentShader: `${simSurfaceShaderChunk}\n${causticChunk}${surfaceFragmentShader}`,
     uniforms: {
+      ...devCaustics?.uniforms,
       uState: { value: null },
       uGridSize: { value: new Vector2(1, 1) },
       uPadding: { value: padding },
@@ -69,7 +79,7 @@ export function createSurfaceComposite({ padding, normalStrength, debugOptics = 
       uColorDepthStrength: { value: OPTICS.colorDepthStrength },
       uDebugOptics: { value: debugOptics },
     },
-    defines: cubicHeight ? { SIM_CUBIC: '' } : {},
+    defines: { ...(cubicHeight ? { SIM_CUBIC: '' } : {}), ...devCaustics?.defines },
     depthTest: false,
     depthWrite: false,
   });
@@ -77,6 +87,7 @@ export function createSurfaceComposite({ padding, normalStrength, debugOptics = 
   const params = createParams();
   applyPublicControls(createPublicControls(), params);
   applyShadingParams(material.uniforms, params);
+  devCaustics?.apply(material.uniforms, params);
 
   const mesh = new Mesh(new PlaneGeometry(2, 2), material);
   mesh.frustumCulled = false;

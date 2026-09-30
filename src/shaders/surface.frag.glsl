@@ -1,8 +1,9 @@
 // Stage D — full-screen water composite driven by the persistent simulation.
 // Shading is the approved Phase 2–4 model from water.frag.glsl (formulas and
 // thresholds unchanged); only its inputs come from the sim instead of the
-// procedural surface. The Phase 6.5 caustic network is intentionally absent.
-// Prepended with sim/simSurface.glsl.
+// procedural surface. The Phase 6.5 caustic network is intentionally absent; the
+// `#ifdef` caustic blocks are dev-only comparison paths compiled in only when defined.
+// Prepended with sim/simSurface.glsl (and, for `caustics=legacy`, causticsLegacy.glsl).
 
 // --- Simulation inputs ---
 uniform sampler2D uState;
@@ -200,6 +201,22 @@ void main() {
   vec3 streakTint = mix(mix(albedo, uSpecularColor, 0.35), vec3(0.88, 0.95, 0.98), brightKnot * 0.3);
   color += streakTint * streak;
 
+#ifdef CAUSTICS_LEGACY
+  // --- Dev only (Stage E0, `caustics=legacy`): legacy Phase 6.5 network on the sim surface ---
+  // Gate / tint / weight copied unchanged from water.frag.glsl.
+  float netRaw = causticNetwork(worldPos.xy, N, surfHeight, noiseVary);
+  float netGate = mix(0.52, 1.0, softBand) * mix(0.68, 1.05, NdotL);
+  float net = netRaw * netGate * uCausticNetIntensity;
+  float netHot = smoothstep(0.35, 1.15, net);
+  vec3 netTint = mix(
+    mix(uCausticTint, uSpecularColor, 0.28),
+    uCausticHot,
+    netHot * 0.72
+  );
+  vec3 causticLight = netTint * net * 0.42;
+  color += causticLight;
+#endif
+
   color = clamp(color, 0.0, 1.0);
 
   // --- Internal diagnostic modes (dev only; `&optics=1..4`) ---
@@ -218,6 +235,12 @@ void main() {
     // Lighting only on flat mid color.
     color = uColorMid * diffuse + specTint * spec;
   }
+
+#ifdef CAUSTIC_VIEW
+  // Dev only (`causticView`): 1 = caustic light as added to the frame, on black;
+  // 2 = raw network before gate / intensity (×0.5: single lines mid-gray, crossings saturate).
+  color = CAUSTIC_VIEW == 2 ? vec3(netRaw * 0.5) : causticLight;
+#endif
 
   gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }

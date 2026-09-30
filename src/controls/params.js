@@ -300,27 +300,7 @@ export function applyParams({ water, scene, renderer, params }) {
   u.uNoiseDriftSpeed.value = NOISE.driftSpeed * speedMul;
 
   applyShadingParams(u, params);
-
-  u.uCausticNetIntensity.value = params.causticNetIntensity;
-  u.uCausticNetScale.value = params.causticNetScale;
-  u.uCausticNetSharpness.value = params.causticNetSharpness;
-  u.uCausticNetWarp.value = params.causticNetWarp;
-  u.uCausticNetSpeed.value = params.causticNetSpeed;
-
-  // Phase 6.5 — caustic highlights derived from selected palette (any hex).
-  u.uColorShallow.value.getHSL(_causticHsl);
-  _causticTint.setHSL(
-    _causticHsl.h,
-    clamp(_causticHsl.s * 0.38, 0.05, 0.55),
-    clamp(_causticHsl.l * 0.45 + 0.48, 0.55, 0.9),
-  );
-  _causticHot.setHSL(
-    _causticHsl.h,
-    clamp(_causticHsl.s * 0.12, 0.02, 0.22),
-    clamp(_causticHsl.l * 0.2 + 0.78, 0.82, 0.97),
-  );
-  u.uCausticTint.value.copy(_causticTint);
-  u.uCausticHot.value.copy(_causticHot);
+  applyCausticParams(u, params);
 
   // Keep page / clear color locked to the deep body tone.
   scene.background.copy(u.uColorDeep.value);
@@ -383,6 +363,35 @@ export function applyShadingParams(u, params) {
   u.uColorDeep.value.copy(_deep);
   u.uColorMid.value.copy(_mid);
   u.uColorShallow.value.copy(_shallow);
+}
+
+/**
+ * Phase 6.5 fine-caustic uniforms plus palette-derived caustic tints (any hex).
+ * Reads `uColorShallow`, so call after `applyShadingParams`.
+ *
+ * @param {Record<string, { value: any }>} u
+ * @param {ReturnType<typeof createParams>} params
+ */
+export function applyCausticParams(u, params) {
+  u.uCausticNetIntensity.value = params.causticNetIntensity;
+  u.uCausticNetScale.value = params.causticNetScale;
+  u.uCausticNetSharpness.value = params.causticNetSharpness;
+  u.uCausticNetWarp.value = params.causticNetWarp;
+  u.uCausticNetSpeed.value = params.causticNetSpeed;
+
+  u.uColorShallow.value.getHSL(_causticHsl);
+  _causticTint.setHSL(
+    _causticHsl.h,
+    clamp(_causticHsl.s * 0.38, 0.05, 0.55),
+    clamp(_causticHsl.l * 0.45 + 0.48, 0.55, 0.9),
+  );
+  _causticHot.setHSL(
+    _causticHsl.h,
+    clamp(_causticHsl.s * 0.12, 0.02, 0.22),
+    clamp(_causticHsl.l * 0.2 + 0.78, 0.82, 0.97),
+  );
+  u.uCausticTint.value.copy(_causticTint);
+  u.uCausticHot.value.copy(_causticHot);
 }
 
 /**

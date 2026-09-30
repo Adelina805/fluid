@@ -4,6 +4,7 @@ import { bindVisibility } from './visibility.js';
 import { createTopDownCamera } from '../render/camera.js';
 import { COLOR_DEEP } from '../render/createWaterMesh.js';
 import { SIM_HEIGHT_SCALE, createSurfaceComposite } from '../render/createSurfaceComposite.js';
+import { createLegacyCausticsDev } from '../render/legacyCausticsDev.js';
 import { createSimPointer } from '../interaction/simPointer.js';
 import {
   MAX_STEPS_PER_FRAME,
@@ -45,6 +46,28 @@ const TEST_IMPULSES = [
   { delay: 0, x: 0.5, y: 0.5, radius: 6, amplitude: 1.0 },
   { delay: 1.5, x: 0.63, y: 0.4, radius: 6, amplitude: 1.0 },
 ];
+
+/**
+ * `caustics=` for the water view. `new` is reserved for Stage E1 and falls back to `off` until then.
+ * @param {URLSearchParams} query
+ * @param {boolean} showWater
+ * @returns {'off' | 'legacy'}
+ */
+function resolveCausticMode(query, showWater) {
+  if (!query.has('caustics')) return 'off';
+  const requested = query.get('caustics');
+  if (!showWater) {
+    console.warn('[sim] caustics= applies only to the water view (`?sim&water`); ignored.');
+    return 'off';
+  }
+  if (requested === 'off' || requested === 'legacy') return requested;
+  if (requested === 'new') {
+    console.warn('[sim] caustics=new is reserved for Stage E1 and not implemented yet; caustics off.');
+  } else {
+    console.warn(`[sim] unknown caustics=${requested} (use off | legacy | new); caustics off.`);
+  }
+  return 'off';
+}
 
 /**
  * GPU pass timing via EXT_disjoint_timer_query_webgl2 (dev only).
@@ -103,6 +126,9 @@ function createGpuTimer(gl) {
  *
  * Dev URL options: `water` (sim-driven water composite, Stage D), `optics=<1–4>` (water: Fresnel /
  * distortion / albedo / lighting only; cubic B-spline height by default, `bilinear` to compare),
+ * `caustics=off|legacy|new` (water: Stage E comparison; `off` default, `legacy` = legacy Phase 6.5
+ * network on the sim surface, `new` reserved for E1), `causticView` (caustic light only, on black) or
+ * `causticView=raw` (raw network before gate / intensity),
  * `normals` (normal view), `cubic` (B-spline height sampling in the height / normal views),
  * `normalStrength=<n>`, `debugPadding` (show sponge margin), `gain=<n>`, `simFps=<n>` (throttle render loop),
  * `testImpulses` (replay the Stage A impulses). Console: `__fluidSim.impulse(x, y, amplitude, radius)`.
@@ -122,6 +148,13 @@ export function createSimDebugApp(root) {
     : DEBUG_NORMAL_STRENGTH;
   const throttleFps = Number(query.get('simFps')) || 0;
   const replayTestImpulses = query.has('testImpulses');
+  const caustics = resolveCausticMode(query, showWater);
+  const causticView = caustics !== 'off' && query.has('causticView')
+    ? (query.get('causticView') === 'raw' ? 2 : 1)
+    : 0;
+  if (query.has('causticView') && !causticView) {
+    console.warn('[sim] causticView needs `water&caustics=legacy`; ignored.');
+  }
 
   const camera = createTopDownCamera();
   const renderer = new WebGLRenderer({
@@ -148,11 +181,20 @@ export function createSimDebugApp(root) {
   const samplingLabel = cubicHeight ? 'cubic B-spline' : 'bilinear';
   let viewMesh;
   if (showWater) {
-    viewMesh = createSurfaceComposite({ padding: SIM_EDGE_PADDING, normalStrength, debugOptics, cubicHeight });
+    const devCaustics = caustics === 'legacy' ? createLegacyCausticsDev({ view: causticView }) : null;
+    viewMesh = createSurfaceComposite({
+      padding: SIM_EDGE_PADDING,
+      normalStrength,
+      debugOptics,
+      cubicHeight,
+      devCaustics,
+    });
     viewMesh.material.uniforms.uCameraPosition.value.copy(camera.position);
+    const viewLabel = ['', ', caustic light only', ', raw caustic network'][causticView];
     console.info(
       `[sim] view: water composite (normal strength ${normalStrength}, ${samplingLabel} height` +
-        `, height scale ${SIM_HEIGHT_SCALE}${debugOptics ? `, optics debug ${debugOptics}` : ''}; caustics off)`,
+        `, height scale ${SIM_HEIGHT_SCALE}${debugOptics ? `, optics debug ${debugOptics}` : ''}` +
+        `; caustics ${caustics}${viewLabel})`,
     );
   } else {
     const debugMaterial = new ShaderMaterial({
@@ -224,6 +266,8 @@ export function createSimDebugApp(root) {
   let frameId = 0;
   let running = false;
   let lastFrameTime = 0;
+  /** Visible seconds (skips hidden time), like the legacy app's `uTime`. */
+  let elapsed = 0;
   let statsClock = 0;
   let framesSinceStats = 0;
   let stepsSinceStats = 0;
@@ -313,6 +357,8 @@ export function createSimDebugApp(root) {
     }
 
     viewUniforms.uState.value = sim.getTexture();
+    elapsed += dt;
+    if (viewUniforms.uTime) viewUniforms.uTime.value = elapsed;
     gpuTimer?.begin('debug');
     renderer.render(viewScene, camera);
     gpuTimer?.end();
