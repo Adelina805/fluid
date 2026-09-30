@@ -48,10 +48,10 @@ const TEST_IMPULSES = [
 ];
 
 /**
- * `caustics=` for the water view. `new` is reserved for Stage E1 and falls back to `off` until then.
+ * `caustics=` for the water view.
  * @param {URLSearchParams} query
  * @param {boolean} showWater
- * @returns {'off' | 'legacy'}
+ * @returns {'off' | 'legacy' | 'new'}
  */
 function resolveCausticMode(query, showWater) {
   if (!query.has('caustics')) return 'off';
@@ -60,12 +60,8 @@ function resolveCausticMode(query, showWater) {
     console.warn('[sim] caustics= applies only to the water view (`?sim&water`); ignored.');
     return 'off';
   }
-  if (requested === 'off' || requested === 'legacy') return requested;
-  if (requested === 'new') {
-    console.warn('[sim] caustics=new is reserved for Stage E1 and not implemented yet; caustics off.');
-  } else {
-    console.warn(`[sim] unknown caustics=${requested} (use off | legacy | new); caustics off.`);
-  }
+  if (requested === 'off' || requested === 'legacy' || requested === 'new') return requested;
+  console.warn(`[sim] unknown caustics=${requested} (use off | legacy | new); caustics off.`);
   return 'off';
 }
 
@@ -127,7 +123,7 @@ function createGpuTimer(gl) {
  * Dev URL options: `water` (sim-driven water composite, Stage D), `optics=<1–4>` (water: Fresnel /
  * distortion / albedo / lighting only; cubic B-spline height by default, `bilinear` to compare),
  * `caustics=off|legacy|new` (water: Stage E comparison; `off` default, `legacy` = legacy Phase 6.5
- * network on the sim surface, `new` reserved for E1), `causticView` (caustic light only, on black) or
+ * network on the sim surface, `new` = rebuilt caustics), `causticView` (caustic light only, on black) or
  * `causticView=raw` (raw network before gate / intensity),
  * `normals` (normal view), `cubic` (B-spline height sampling in the height / normal views),
  * `normalStrength=<n>`, `debugPadding` (show sponge margin), `gain=<n>`, `simFps=<n>` (throttle render loop),
@@ -153,7 +149,7 @@ export function createSimDebugApp(root) {
     ? (query.get('causticView') === 'raw' ? 2 : 1)
     : 0;
   if (query.has('causticView') && !causticView) {
-    console.warn('[sim] causticView needs `water&caustics=legacy`; ignored.');
+    console.warn('[sim] causticView needs `water&caustics=legacy|new`; ignored.');
   }
 
   const camera = createTopDownCamera();
@@ -181,13 +177,14 @@ export function createSimDebugApp(root) {
   const samplingLabel = cubicHeight ? 'cubic B-spline' : 'bilinear';
   let viewMesh;
   if (showWater) {
-    const devCaustics = caustics === 'legacy' ? createLegacyCausticsDev({ view: causticView }) : null;
     viewMesh = createSurfaceComposite({
       padding: SIM_EDGE_PADDING,
       normalStrength,
       debugOptics,
       cubicHeight,
-      devCaustics,
+      caustics: caustics === 'new' ? 'new' : 'off',
+      causticView,
+      devCaustics: caustics === 'legacy' ? createLegacyCausticsDev() : null,
     });
     viewMesh.material.uniforms.uCameraPosition.value.copy(camera.position);
     const viewLabel = ['', ', caustic light only', ', raw caustic network'][causticView];

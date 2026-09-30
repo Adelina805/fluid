@@ -6,11 +6,13 @@ import {
   SLOPE_INFLUENCE,
 } from './createWaterMesh.js';
 import {
+  applyCausticParams,
   applyPublicControls,
   applyShadingParams,
   createParams,
   createPublicControls,
 } from '../controls/params.js';
+import causticsShaderChunk from '../shaders/caustics.glsl?raw';
 import fullscreenVertexShader from '../shaders/fullscreen.vert.glsl?raw';
 import simSurfaceShaderChunk from '../shaders/sim/simSurface.glsl?raw';
 import surfaceFragmentShader from '../shaders/surface.frag.glsl?raw';
@@ -21,6 +23,25 @@ import surfaceFragmentShader from '../shaders/surface.frag.glsl?raw';
  */
 export const SIM_HEIGHT_SCALE = 0.15;
 
+/** Rebuilt caustic network (Stage E): shader chunk, define, uniforms at the approved defaults. */
+function createCausticPath() {
+  return {
+    chunk: causticsShaderChunk,
+    defines: { CAUSTICS_NEW: '' },
+    uniforms: {
+      uCausticNetIntensity: { value: 0 },
+      uCausticNetScale: { value: 0 },
+      uCausticNetSharpness: { value: 0 },
+      uCausticNetWarp: { value: 0 },
+      // Written by applyCausticParams; the rebuilt field has no independent animation yet.
+      uCausticNetSpeed: { value: 0 },
+      uCausticTint: { value: new Color() },
+      uCausticHot: { value: new Color() },
+    },
+    apply: applyCausticParams,
+  };
+}
+
 /**
  * Full-screen water composite driven by the persistent simulation (Stage D, `?sim&water`).
  * Shading uniforms come from the same public-default mapping as the legacy water mesh.
@@ -30,22 +51,30 @@ export const SIM_HEIGHT_SCALE = 0.15;
  * @param {number} options.normalStrength Shared with the normal debug view.
  * @param {number} [options.debugOptics] 0 = composite; 1–4 = Fresnel / distortion / albedo / lighting.
  * @param {boolean} [options.cubicHeight] Cubic B-spline height sampling (default); false = bilinear.
+ * @param {'off' | 'new'} [options.caustics] Rebuilt caustic network (Stage E); off by default.
+ * @param {0 | 1 | 2} [options.causticView] With caustics on: 1 = caustic light only (on black), 2 = raw network.
  * @param {{ chunk: string, defines: object, uniforms: object, apply: Function }} [options.devCaustics]
- *   Dev-only caustic comparison path (Stage E0 harness); absent in normal use.
+ *   Dev-only caustic comparison path (Stage E0 harness); replaces `caustics`; absent in normal use.
  */
 export function createSurfaceComposite({
   padding,
   normalStrength,
   debugOptics = 0,
   cubicHeight = true,
+  caustics = 'off',
+  causticView = 0,
   devCaustics = null,
 }) {
-  const causticChunk = devCaustics ? `${devCaustics.chunk}\n` : '';
+  const causticPath = devCaustics ?? (caustics === 'new' ? createCausticPath() : null);
+  const causticChunk = causticPath ? `${causticPath.chunk}\n` : '';
+  const causticDefines = causticPath
+    ? { ...causticPath.defines, ...(causticView ? { CAUSTIC_VIEW: String(causticView) } : {}) }
+    : {};
   const material = new ShaderMaterial({
     vertexShader: fullscreenVertexShader,
     fragmentShader: `${simSurfaceShaderChunk}\n${causticChunk}${surfaceFragmentShader}`,
     uniforms: {
-      ...devCaustics?.uniforms,
+      ...causticPath?.uniforms,
       uState: { value: null },
       uGridSize: { value: new Vector2(1, 1) },
       uPadding: { value: padding },
@@ -79,7 +108,7 @@ export function createSurfaceComposite({
       uColorDepthStrength: { value: OPTICS.colorDepthStrength },
       uDebugOptics: { value: debugOptics },
     },
-    defines: { ...(cubicHeight ? { SIM_CUBIC: '' } : {}), ...devCaustics?.defines },
+    defines: { ...(cubicHeight ? { SIM_CUBIC: '' } : {}), ...causticDefines },
     depthTest: false,
     depthWrite: false,
   });
@@ -87,7 +116,7 @@ export function createSurfaceComposite({
   const params = createParams();
   applyPublicControls(createPublicControls(), params);
   applyShadingParams(material.uniforms, params);
-  devCaustics?.apply(material.uniforms, params);
+  causticPath?.apply(material.uniforms, params);
 
   const mesh = new Mesh(new PlaneGeometry(2, 2), material);
   mesh.frustumCulled = false;

@@ -1,9 +1,9 @@
 // Stage D — full-screen water composite driven by the persistent simulation.
 // Shading is the approved Phase 2–4 model from water.frag.glsl (formulas and
 // thresholds unchanged); only its inputs come from the sim instead of the
-// procedural surface. The Phase 6.5 caustic network is intentionally absent; the
-// `#ifdef` caustic blocks are dev-only comparison paths compiled in only when defined.
-// Prepended with sim/simSurface.glsl (and, for `caustics=legacy`, causticsLegacy.glsl).
+// procedural surface. Caustics are compiled in only when defined: `CAUSTICS_NEW` (Stage E
+// rebuild, caustics.glsl) or `CAUSTICS_LEGACY` (dev-only comparison, causticsLegacy.glsl).
+// Prepended with sim/simSurface.glsl and, when enabled, the caustic chunk.
 
 // --- Simulation inputs ---
 uniform sampler2D uState;
@@ -201,10 +201,14 @@ void main() {
   vec3 streakTint = mix(mix(albedo, uSpecularColor, 0.35), vec3(0.88, 0.95, 0.98), brightKnot * 0.3);
   color += streakTint * streak;
 
-#ifdef CAUSTICS_LEGACY
-  // --- Dev only (Stage E0, `caustics=legacy`): legacy Phase 6.5 network on the sim surface ---
+#if defined(CAUSTICS_LEGACY) || defined(CAUSTICS_NEW)
+  // --- Caustic network (`caustics=legacy`: dev-only E0 comparison; `caustics=new`: Stage E) ---
   // Gate / tint / weight copied unchanged from water.frag.glsl.
+#ifdef CAUSTICS_LEGACY
   float netRaw = causticNetwork(worldPos.xy, N, surfHeight, noiseVary);
+#else
+  float netRaw = causticField(worldPos.xy);
+#endif
   float netGate = mix(0.52, 1.0, softBand) * mix(0.68, 1.05, NdotL);
   float net = netRaw * netGate * uCausticNetIntensity;
   float netHot = smoothstep(0.35, 1.15, net);
