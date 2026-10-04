@@ -207,7 +207,9 @@ void main() {
 #ifdef CAUSTICS_LEGACY
   float netRaw = causticNetwork(worldPos.xy, N, surfHeight, noiseVary);
 #else
-  float netRaw = causticField(worldPos.xy);
+  // Normal strength × sim texels per world unit (grid is aspect-matched, so either axis).
+  float causticFoldScale = uNormalStrength * (uGridSize.y - 2.0 * uPadding) / (2.0 * uWorldScale.y);
+  float netRaw = causticField(worldPos.xy, N.xy, simUv, causticFoldScale);
 #endif
   float netGate = mix(0.52, 1.0, softBand) * mix(0.68, 1.05, NdotL);
   float net = netRaw * netGate * uCausticNetIntensity;
@@ -242,8 +244,13 @@ void main() {
 
 #ifdef CAUSTIC_VIEW
   // Dev only (`causticView`): 1 = caustic light as added to the frame, on black;
-  // 2 = raw network before gate / intensity (×0.5: single lines mid-gray, crossings saturate).
+  // 2 = raw network before gate / intensity (×0.5: single lines mid-gray, crossings saturate);
+  // 3 / 4 = rebuilt-field coupling views (fold / concentration, caustics.glsl).
+#if CAUSTIC_VIEW >= 3
+  color = causticDebugView(CAUSTIC_VIEW, netRaw, worldPos.xy, N.xy, simUv, causticFoldScale);
+#else
   color = CAUSTIC_VIEW == 2 ? vec3(netRaw * 0.5) : causticLight;
+#endif
 #endif
 
   gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);

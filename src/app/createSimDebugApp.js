@@ -3,7 +3,11 @@ import { bindResize } from './resize.js';
 import { bindVisibility } from './visibility.js';
 import { createTopDownCamera } from '../render/camera.js';
 import { COLOR_DEEP } from '../render/createWaterMesh.js';
-import { SIM_HEIGHT_SCALE, createSurfaceComposite } from '../render/createSurfaceComposite.js';
+import {
+  CAUSTIC_DRIFT_MODES,
+  SIM_HEIGHT_SCALE,
+  createSurfaceComposite,
+} from '../render/createSurfaceComposite.js';
 import { createLegacyCausticsDev } from '../render/legacyCausticsDev.js';
 import { createSimPointer } from '../interaction/simPointer.js';
 import {
@@ -65,6 +69,48 @@ function resolveCausticMode(query, showWater) {
   return 'off';
 }
 
+/** Same impulse as a real tap (simPointer.js `TAP_RADIUS` / `TAP_AMPLITUDE` / sign), for scripted tests. */
+const TEST_TAP = { radius: 5, amplitude: -0.4 };
+
+/** `causticView=` values → CAUSTIC_VIEW define; fold / conc exist only for the rebuilt field. */
+const CAUSTIC_VIEWS = { raw: 2, fold: 3, conc: 4 };
+
+/** Dev URL overrides for the Stage E2 caustic coupling: name → [option key, min, max]. */
+const CAUSTIC_COUPLING_PARAMS = {
+  causticBend: ['bend', 0, 1.5],
+  causticMaxTilt: ['maxTilt', 0.05, 1],
+  causticFoldLimit: ['foldLimit', 0.1, 2],
+  causticConc: ['conc', 0, 3],
+  causticConcGain: ['concGain', 0, 400],
+  causticDriftSpeed: ['driftSpeed', 0, 1],
+};
+
+/**
+ * `caustic*=` coupling overrides (rebuilt field only), clamped.
+ * @param {URLSearchParams} query
+ * @param {'off' | 'legacy' | 'new'} caustics
+ */
+function resolveCausticCoupling(query, caustics) {
+  const names = [...Object.keys(CAUSTIC_COUPLING_PARAMS), 'causticDrift'].filter((name) => query.has(name));
+  if (caustics !== 'new') {
+    if (names.length) console.warn(`[sim] ${names.join(', ')} apply only to \`water&caustics=new\`; ignored.`);
+    return {};
+  }
+  const coupling = {};
+  for (const [name, [key, min, max]] of Object.entries(CAUSTIC_COUPLING_PARAMS)) {
+    if (!query.has(name)) continue;
+    const value = Number(query.get(name));
+    if (Number.isFinite(value)) coupling[key] = Math.min(Math.max(value, min), max);
+    else console.warn(`[sim] ${name}=${query.get(name)} is not a number; ignored.`);
+  }
+  if (query.has('causticDrift')) {
+    const drift = query.get('causticDrift');
+    if (CAUSTIC_DRIFT_MODES.includes(drift)) coupling.drift = drift;
+    else console.warn(`[sim] unknown causticDrift=${drift} (use ${CAUSTIC_DRIFT_MODES.join(' | ')}); default kept.`);
+  }
+  return coupling;
+}
+
 /**
  * GPU pass timing via EXT_disjoint_timer_query_webgl2 (dev only).
  * @param {WebGL2RenderingContext} gl
@@ -124,10 +170,13 @@ function createGpuTimer(gl) {
  * distortion / albedo / lighting only; cubic B-spline height by default, `bilinear` to compare),
  * `caustics=off|legacy|new` (water: Stage E comparison; `off` default, `legacy` = legacy Phase 6.5
  * network on the sim surface, `new` = rebuilt caustics), `causticView` (caustic light only, on black) or
- * `causticView=raw` (raw network before gate / intensity),
+ * `causticView=raw` (raw network before gate / intensity), and for `caustics=new` the Stage E2 coupling:
+ * `causticView=fold|conc` (fold / concentration views), `causticBend=<n>`, `causticMaxTilt=<n>`, `causticFoldLimit=<n>`,
+ * `causticConc=<n>`, `causticConcGain=<n>`, `causticDrift=off|warp|cells`, `causticDriftSpeed=<n>`,
  * `normals` (normal view), `cubic` (B-spline height sampling in the height / normal views),
  * `normalStrength=<n>`, `debugPadding` (show sponge margin), `gain=<n>`, `simFps=<n>` (throttle render loop),
- * `testImpulses` (replay the Stage A impulses). Console: `__fluidSim.impulse(x, y, amplitude, radius)`.
+ * `testImpulses` (replay the Stage A impulses). Console: `__fluidSim.impulse(x, y, amplitude, radius)`,
+ * `__fluidSim.tap(x, y)`, `__fluidSim.pause()` / `resume()` / `step(n)`.
  * @param {HTMLElement} root
  */
 export function createSimDebugApp(root) {
@@ -145,12 +194,17 @@ export function createSimDebugApp(root) {
   const throttleFps = Number(query.get('simFps')) || 0;
   const replayTestImpulses = query.has('testImpulses');
   const caustics = resolveCausticMode(query, showWater);
-  const causticView = caustics !== 'off' && query.has('causticView')
-    ? (query.get('causticView') === 'raw' ? 2 : 1)
+  let causticView = caustics !== 'off' && query.has('causticView')
+    ? (CAUSTIC_VIEWS[query.get('causticView')] ?? 1)
     : 0;
   if (query.has('causticView') && !causticView) {
     console.warn('[sim] causticView needs `water&caustics=legacy|new`; ignored.');
   }
+  if (causticView >= 3 && caustics !== 'new') {
+    console.warn('[sim] causticView=fold|conc needs `caustics=new`; showing caustic light instead.');
+    causticView = 1;
+  }
+  const causticCoupling = resolveCausticCoupling(query, caustics);
 
   const camera = createTopDownCamera();
   const renderer = new WebGLRenderer({
@@ -184,14 +238,24 @@ export function createSimDebugApp(root) {
       cubicHeight,
       caustics: caustics === 'new' ? 'new' : 'off',
       causticView,
+      causticCoupling,
       devCaustics: caustics === 'legacy' ? createLegacyCausticsDev() : null,
     });
     viewMesh.material.uniforms.uCameraPosition.value.copy(camera.position);
-    const viewLabel = ['', ', caustic light only', ', raw caustic network'][causticView];
+    const viewLabel = ['', ', caustic light only', ', raw caustic network', ', fold view', ', concentration view'][
+      causticView
+    ];
+    const coupling = viewMesh.userData.causticCoupling;
+    const couplingLabel = coupling
+      ? ` | bend ${coupling.bend} (max tilt ${coupling.maxTilt}, fold limit ${coupling.foldLimit})` +
+        `, concentration ${coupling.conc}` +
+        ` (gain ${coupling.concGain}), drift ${coupling.drift}` +
+        `${coupling.drift === 'off' ? '' : ` @ ${coupling.driftSpeed}`}`
+      : '';
     console.info(
       `[sim] view: water composite (normal strength ${normalStrength}, ${samplingLabel} height` +
         `, height scale ${SIM_HEIGHT_SCALE}${debugOptics ? `, optics debug ${debugOptics}` : ''}` +
-        `; caustics ${caustics}${viewLabel})`,
+        `; caustics ${caustics}${viewLabel}${couplingLabel})`,
     );
   } else {
     const debugMaterial = new ShaderMaterial({
@@ -226,9 +290,21 @@ export function createSimDebugApp(root) {
     uniforms: viewUniforms,
     /** Dev-only manual impulse; UV coordinates, y up. */
     impulse: (x = 0.5, y = 0.5, amplitude = 1.0, radius = 6) => sim.addImpulse(x, y, radius, amplitude),
+    /** Dev-only: the same impulse a real tap makes, at visible-area UV (y up). */
+    tap: (x = 0.5, y = 0.5) => sim.addImpulse(x, y, TEST_TAP.radius, TEST_TAP.amplitude),
+    /** Dev-only: stop / restart the render loop (for deterministic, stepped captures). */
+    pause: () => loop.stop(),
+    resume: () => loop.start(),
+    /** Dev-only: advance `count` fixed sim steps (and caustic time) without rendering. */
+    step: (count = 1) => {
+      sim.advance(count);
+      elapsed += count / SIM_STEP_HZ;
+      if (viewUniforms.uTime) viewUniforms.uTime.value = elapsed;
+    },
     /** Dev-only: draw the current state immediately (for scripted captures). */
     render: () => {
       viewUniforms.uState.value = sim.getTexture();
+      viewMesh.userData.prepare?.(renderer, sim.getTexture());
       renderer.render(viewScene, camera);
     },
   };
@@ -357,6 +433,7 @@ export function createSimDebugApp(root) {
     elapsed += dt;
     if (viewUniforms.uTime) viewUniforms.uTime.value = elapsed;
     gpuTimer?.begin('debug');
+    viewMesh.userData.prepare?.(renderer, sim.getTexture());
     renderer.render(viewScene, camera);
     gpuTimer?.end();
     gpuTimer?.poll();
@@ -400,6 +477,7 @@ export function createSimDebugApp(root) {
       unbindVisibility();
       clearTimeout(resizeTimer);
       sim.dispose();
+      viewMesh.userData.dispose?.();
       viewMesh.geometry.dispose();
       viewMesh.material.dispose();
       renderer.dispose();
