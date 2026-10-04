@@ -50,12 +50,57 @@ export const CAUSTIC_COUPLING = {
   driftSpeed: { off: 0, warp: 0.015, cells: 0.008 },
 };
 
+/** Stage E3 structural variants (dev comparison): 1 = one layer (E2), 2 = one layer + F3, 3 = two layers. */
+export const CAUSTIC_VARIANTS = [1, 2, 3];
+
+/**
+ * Stage E3 structure constants (dev; live in `__fluidSim.uniforms`). Coupling is shared by all variants.
+ */
+export const CAUSTIC_STRUCTURE = {
+  /** Variant 1 is the unchanged E2 field. */
+  variant: 1,
+  /** Variants 2–3: line width as a fraction of the approved sharpness, hairline → thickest. */
+  lineWidth: [0.12, 0.8],
+  /** Variant 2: junction-node weight (primary line × its F3 − F2 continuation). */
+  nodeGain: 1.4,
+  /** Variant 2: secondary-strand weight; fraction of cells they subdivide. */
+  strandGain: 0.46,
+  strandCells: 0.35,
+  /** Variant 3: second-layer lattice scale (legacy ×1.71), weight, and crossing weight (legacy values). */
+  layer2Scale: 1.71,
+  layer2Gain: 0.46,
+  crossGain: 0.9,
+};
+
+/** Uniforms of the E3 structural variant (none for variant 1). */
+function createStructureUniforms(variant) {
+  const s = CAUSTIC_STRUCTURE;
+  if (variant === 2) {
+    return {
+      uCausticLineWidth: { value: new Vector2(...s.lineWidth) },
+      uCausticNodeGain: { value: s.nodeGain },
+      uCausticStrandGain: { value: s.strandGain },
+      uCausticStrandCells: { value: s.strandCells },
+    };
+  }
+  if (variant === 3) {
+    return {
+      uCausticLineWidth: { value: new Vector2(...s.lineWidth) },
+      uCausticLayer2Scale: { value: s.layer2Scale },
+      uCausticLayer2Gain: { value: s.layer2Gain },
+      uCausticCrossGain: { value: s.crossGain },
+    };
+  }
+  return {};
+}
+
 /**
  * Rebuilt caustic network (Stage E): shader chunk, defines, uniforms at the approved defaults.
  * @param {Partial<typeof CAUSTIC_COUPLING> & { driftSpeed?: number }} coupling
  * @param {number} causticView Fold / concentration views (3, 4) also need the curvature.
+ * @param {number} variant E3 structural variant (`CAUSTIC_VARIANTS`).
  */
-function createCausticPath(coupling, causticView) {
+function createCausticPath(coupling, causticView, variant) {
   const { bend, maxTilt, foldLimit, conc, concGain, drift } = { ...CAUSTIC_COUPLING, ...coupling };
   const driftSpeed = typeof coupling.driftSpeed === 'number'
     ? coupling.driftSpeed
@@ -66,6 +111,7 @@ function createCausticPath(coupling, causticView) {
     chunk: causticsShaderChunk,
     defines: {
       CAUSTICS_NEW: '',
+      CAUSTIC_VARIANT: String(variant),
       ...(bend > 0 ? { CAUSTIC_BEND: '' } : {}),
       ...(conc > 0 ? { CAUSTIC_CONC: '' } : {}),
       ...(driftIndex > 0 ? { CAUSTIC_DRIFT: String(driftIndex) } : {}),
@@ -87,10 +133,11 @@ function createCausticPath(coupling, causticView) {
       uCausticDriftSpeed: { value: driftSpeed },
       uCausticCurvature: { value: curvature?.texture ?? null },
       uTime: { value: 0 },
+      ...createStructureUniforms(variant),
     },
     apply: applyCausticParams,
     curvature,
-    summary: { bend, maxTilt, foldLimit, conc, concGain, drift, driftSpeed },
+    summary: { variant, bend, maxTilt, foldLimit, conc, concGain, drift, driftSpeed },
   };
 }
 
@@ -107,6 +154,7 @@ function createCausticPath(coupling, causticView) {
  * @param {0 | 1 | 2 | 3 | 4} [options.causticView] With caustics on: 1 = caustic light only (on black),
  *   2 = raw network; rebuilt field only: 3 = fold view, 4 = concentration view.
  * @param {object} [options.causticCoupling] Overrides for `CAUSTIC_COUPLING` (rebuilt field only).
+ * @param {1 | 2 | 3} [options.causticVariant] E3 structural variant (rebuilt field only).
  * @param {{ chunk: string, defines: object, uniforms: object, apply: Function }} [options.devCaustics]
  *   Dev-only caustic comparison path (Stage E0 harness); replaces `caustics`; absent in normal use.
  */
@@ -118,9 +166,11 @@ export function createSurfaceComposite({
   caustics = 'off',
   causticView = 0,
   causticCoupling = {},
+  causticVariant = CAUSTIC_STRUCTURE.variant,
   devCaustics = null,
 }) {
-  const causticPath = devCaustics ?? (caustics === 'new' ? createCausticPath(causticCoupling, causticView) : null);
+  const causticPath = devCaustics
+    ?? (caustics === 'new' ? createCausticPath(causticCoupling, causticView, causticVariant) : null);
   const causticChunk = causticPath ? `${causticPath.chunk}\n` : '';
   const causticDefines = causticPath
     ? { ...causticPath.defines, ...(causticView ? { CAUSTIC_VIEW: String(causticView) } : {}) }

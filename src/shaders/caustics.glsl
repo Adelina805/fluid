@@ -6,7 +6,16 @@
 //   CAUSTIC_BEND   — refraction-style lookup offset from the composite's sim normal;
 //   CAUSTIC_CONC   — light concentration from the smoothed sim-height curvature;
 //   CAUSTIC_DRIFT  — 1 = slow warp-domain drift, 2 = slow cell-site motion (comparison only).
+// E3 structural variants (dev comparison, CAUSTIC_VARIANT; coupling identical in all three):
+//   1 — one Worley layer, E1 / E2 line model (unchanged baseline);
+//   2 — one Worley layer + F3 from the same 3×3 search: junction nodes and secondary strands;
+//   3 — two Worley layers (second at ×1.71, independent cells) with crossing / node terms.
+//   Variants 2 and 3 share the E3 line model (wider hairline ↔ thick range from the same detail noise).
 // Prepended to surface.frag.glsl after sim/simSurface.glsl.
+
+#ifndef CAUSTIC_VARIANT
+#define CAUSTIC_VARIANT 1
+#endif
 
 uniform float uCausticNetIntensity;
 uniform float uCausticNetScale;
@@ -30,6 +39,24 @@ uniform sampler2D uCausticCurvature;
 // Drift rate: warp-lattice units / s (mode 1) or orbit cycles / s (mode 2).
 uniform float uCausticDriftSpeed;
 uniform float uTime;
+
+#if CAUSTIC_VARIANT >= 2
+// E3 line model: line width as a fraction of uCausticNetSharpness, hairline (x) → thickest (y).
+uniform vec2 uCausticLineWidth;
+#endif
+#if CAUSTIC_VARIANT == 2
+// Junction-node weight (primary line × its F3 − F2 continuation through the vertex).
+uniform float uCausticNodeGain;
+// Secondary F3 − F2 strands: weight, and the fraction of cells they subdivide.
+uniform float uCausticStrandGain;
+uniform float uCausticStrandCells;
+#endif
+#if CAUSTIC_VARIANT == 3
+// Second layer: lattice scale relative to the first, weight, and crossing weight.
+uniform float uCausticLayer2Scale;
+uniform float uCausticLayer2Gain;
+uniform float uCausticCrossGain;
+#endif
 
 // "Hash without Sine" (Dave Hoskins, MIT): multiply-add + fract only, identical on every
 // fp32 GPU. Inputs are integer cell coordinates of modest size.
@@ -89,6 +116,51 @@ vec2 causticWorley(vec2 p) {
   return sqrt(vec2(d1, d2));
 }
 
+#if CAUSTIC_VARIANT == 2
+/**
+ * Same static 3×3 search as causticWorley, also keeping F3 and a random value for the F1 cell.
+ * Returns (F1, F2, F3, cell random). F3 is occasionally too large where the true third site lies
+ * outside the 3×3 block (~1.7% of pixels with this jitter); it only feeds the weaker node / strand terms.
+ */
+vec4 causticWorley3(vec2 p) {
+  vec2 n = floor(p);
+  vec2 f = fract(p);
+  float d1 = 64.0;
+  float d2 = 64.0;
+  float d3 = 64.0;
+  float cell = 0.0;
+
+  for (int j = -1; j <= 1; j++) {
+    for (int i = -1; i <= 1; i++) {
+      vec2 g = vec2(float(i), float(j));
+      vec2 s = causticHash22(n + g) - 0.5;
+      vec2 site = 0.5 + 4.0 * s * (1.0 - 2.0 * abs(s));
+      vec2 r = g + site - f;
+      float d = dot(r, r);
+      cell = d < d1 ? fract(dot(s, vec2(13.7, 7.3))) : cell;
+      d3 = min(d3, max(d2, d));
+      d2 = min(d2, max(d1, d));
+      d1 = min(d1, d);
+    }
+  }
+
+  return vec4(sqrt(vec3(d1, d2, d3)), cell);
+}
+#endif
+
+#if CAUSTIC_VARIANT >= 2
+/**
+ * E3 line profile on an F-difference `e` (0 on the line). `tw` = thickness class, 0 hairline … 1 thick:
+ * thin lines keep a near-linear crisp profile, thick ones a softer shoulder around a bright core.
+ * Never narrower than ~1.5 px.
+ */
+float causticLineE3(float e, float width, float tw) {
+  float w = max(width, 1.5 * fwidth(e));
+  float line = 1.0 - smoothstep(0.0, w, e);
+  return pow(max(line, 0.0), mix(1.15, 2.0, tw));
+}
+#endif
+
 /** Smoothed sim-height Laplacian (per texel², createCausticCurvature.js) at visible-area-mapped uv. */
 float causticCurvature(vec2 simUv) {
 #if defined(CAUSTIC_BEND) || defined(CAUSTIC_CONC) || (defined(CAUSTIC_VIEW) && CAUSTIC_VIEW >= 3)
@@ -141,12 +213,8 @@ float causticField(vec2 worldXY, vec2 tilt, vec2 simUv, float foldScale) {
   vec2 warp = causticNoise2(warpUv) * 2.0 - 1.0;
   vec2 p = q * uCausticNetScale + warp * uCausticNetWarp;
 
-  vec2 edge = causticWorley(p);
-  float e = edge.y - edge.x;
-
   // x → line thickness (legacy thickA scale), y → brightness pulse.
   vec2 detail = causticNoise2(q * 2.15 + vec2(23.7, -41.3));
-  float thick = mix(0.52, 1.38, detail.x);
 
   // Concentration: converging water → brighter, wider lines plus a faint focused glow between
   // them; diverging → weaker lines. Zero on flat water.
@@ -160,13 +228,53 @@ float causticField(vec2 worldXY, vec2 tilt, vec2 simUv, float foldScale) {
   glow = 0.12 * max(conc, 0.0);
 #endif
 
+  float pulse = mix(0.62, 1.18, detail.y);
+
+#if CAUSTIC_VARIANT == 1
+  vec2 edge = causticWorley(p);
+  float e = edge.y - edge.x;
+  float thick = mix(0.52, 1.38, detail.x);
   // Never narrower than ~2 px, whatever the DPR or local compression of the web.
   float width = max(max(uCausticNetSharpness, 0.015) * thick * widthScale, 2.0 * fwidth(e));
   float line = 1.0 - smoothstep(0.0, width, e);
   line = pow(max(line, 0.0), mix(1.35, 2.15, 1.0 - thick * 0.32));
-
-  float pulse = mix(0.62, 1.18, detail.y);
   return line * 0.70 * pulse * gain + glow;
+#else
+  // E3 thickness classes from the same detail noise: mostly fine / medium strands, thick ones
+  // only near the top of its (bell-shaped) range. Thicker lines are also a little brighter.
+  float sharp = max(uCausticNetSharpness, 0.015) * widthScale;
+  float tw = smoothstep(0.22, 0.85, detail.x);
+  float line1Width = sharp * mix(uCausticLineWidth.x, uCausticLineWidth.y, tw * tw);
+
+#if CAUSTIC_VARIANT == 2
+  vec4 w = causticWorley3(p);
+  float line1 = causticLineE3(w.y - w.x, line1Width, tw);
+  // F3 − F2 = 0 continues each primary edge straight through the junction into the opposite cell,
+  // turning Y-junctions into crossings; shown as thin strands in a random subset of cells, which
+  // subdivides them (smaller cells beside large ones). Kept thin so the per-cell cut only shows at junctions.
+  float e23 = w.z - w.y;
+  float strand = causticLineE3(e23, sharp * mix(uCausticLineWidth.x, uCausticLineWidth.y * 0.22, tw), 0.0);
+  strand *= step(1.0 - uCausticStrandCells, w.w);
+  // Junction node: the primary line crossing its own continuation (sized by the local line width,
+  // like legacy's layer crossings), only where the pulse noise is high.
+  float node = pow(line1 * causticLineE3(e23, line1Width, tw), 1.25) * smoothstep(0.42, 0.75, detail.y);
+  float network = line1 * mix(0.7, 0.9, tw) + strand * uCausticStrandGain + node * uCausticNodeGain;
+#else
+  vec2 edge1 = causticWorley(p);
+  float line1 = causticLineE3(edge1.y - edge1.x, line1Width, tw);
+  // Independent cells: the offset moves the second lattice far from the first's integer cells.
+  // The detail noise (period ≈ 1.6 small cells) curls its otherwise straight, small-cell edges.
+  vec2 p2 = p * uCausticLayer2Scale + vec2(119.3, -87.6) + (detail - 0.5) * 0.7;
+  vec2 edge2 = causticWorley(p2);
+  float tw2 = smoothstep(0.25, 0.85, detail.y);
+  float line2Width = sharp * mix(uCausticLineWidth.x, uCausticLineWidth.y * 0.6, tw2 * tw2);
+  float line2 = causticLineE3(edge2.y - edge2.x, line2Width, tw2);
+  float crossing = line1 * line2;
+  float network = line1 * mix(0.7, 0.9, tw) + line2 * uCausticLayer2Gain
+    + crossing * uCausticCrossGain + pow(crossing, 1.25) * 0.5;
+#endif
+  return network * pulse * gain + glow;
+#endif
 }
 
 /**

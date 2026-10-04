@@ -5,6 +5,8 @@ import { createTopDownCamera } from '../render/camera.js';
 import { COLOR_DEEP } from '../render/createWaterMesh.js';
 import {
   CAUSTIC_DRIFT_MODES,
+  CAUSTIC_STRUCTURE,
+  CAUSTIC_VARIANTS,
   SIM_HEIGHT_SCALE,
   createSurfaceComposite,
 } from '../render/createSurfaceComposite.js';
@@ -112,6 +114,25 @@ function resolveCausticCoupling(query, caustics) {
 }
 
 /**
+ * `causticVariant=1|2|3` (Stage E3 structural comparison; rebuilt field only).
+ * @param {URLSearchParams} query
+ * @param {'off' | 'legacy' | 'new'} caustics
+ */
+function resolveCausticVariant(query, caustics) {
+  if (!query.has('causticVariant')) return CAUSTIC_STRUCTURE.variant;
+  if (caustics !== 'new') {
+    console.warn('[sim] causticVariant applies only to `water&caustics=new`; ignored.');
+    return CAUSTIC_STRUCTURE.variant;
+  }
+  const variant = Number(query.get('causticVariant'));
+  if (CAUSTIC_VARIANTS.includes(variant)) return variant;
+  console.warn(
+    `[sim] unknown causticVariant=${query.get('causticVariant')} (use ${CAUSTIC_VARIANTS.join(' | ')}); default kept.`,
+  );
+  return CAUSTIC_STRUCTURE.variant;
+}
+
+/**
  * GPU pass timing via EXT_disjoint_timer_query_webgl2 (dev only).
  * @param {WebGL2RenderingContext} gl
  */
@@ -173,6 +194,7 @@ function createGpuTimer(gl) {
  * `causticView=raw` (raw network before gate / intensity), and for `caustics=new` the Stage E2 coupling:
  * `causticView=fold|conc` (fold / concentration views), `causticBend=<n>`, `causticMaxTilt=<n>`, `causticFoldLimit=<n>`,
  * `causticConc=<n>`, `causticConcGain=<n>`, `causticDrift=off|warp|cells`, `causticDriftSpeed=<n>`,
+ * `causticVariant=1|2|3` (Stage E3: one layer / one layer + F3 nodes and strands / two layers),
  * `normals` (normal view), `cubic` (B-spline height sampling in the height / normal views),
  * `normalStrength=<n>`, `debugPadding` (show sponge margin), `gain=<n>`, `simFps=<n>` (throttle render loop),
  * `testImpulses` (replay the Stage A impulses). Console: `__fluidSim.impulse(x, y, amplitude, radius)`,
@@ -205,6 +227,7 @@ export function createSimDebugApp(root) {
     causticView = 1;
   }
   const causticCoupling = resolveCausticCoupling(query, caustics);
+  const causticVariant = resolveCausticVariant(query, caustics);
 
   const camera = createTopDownCamera();
   const renderer = new WebGLRenderer({
@@ -239,6 +262,7 @@ export function createSimDebugApp(root) {
       caustics: caustics === 'new' ? 'new' : 'off',
       causticView,
       causticCoupling,
+      causticVariant,
       devCaustics: caustics === 'legacy' ? createLegacyCausticsDev() : null,
     });
     viewMesh.material.uniforms.uCameraPosition.value.copy(camera.position);
@@ -247,7 +271,7 @@ export function createSimDebugApp(root) {
     ];
     const coupling = viewMesh.userData.causticCoupling;
     const couplingLabel = coupling
-      ? ` | bend ${coupling.bend} (max tilt ${coupling.maxTilt}, fold limit ${coupling.foldLimit})` +
+      ? ` | variant ${coupling.variant} | bend ${coupling.bend} (max tilt ${coupling.maxTilt}, fold limit ${coupling.foldLimit})` +
         `, concentration ${coupling.conc}` +
         ` (gain ${coupling.concGain}), drift ${coupling.drift}` +
         `${coupling.drift === 'off' ? '' : ` @ ${coupling.driftSpeed}`}`
