@@ -13,6 +13,7 @@ import {
   createPublicControls,
 } from '../controls/params.js';
 import { createCausticCurvature } from './createCausticCurvature.js';
+import { CAUSTIC_RES_MODES, createCausticFieldPass } from './createCausticFieldPass.js';
 import causticsShaderChunk from '../shaders/caustics.glsl?raw';
 import fullscreenVertexShader from '../shaders/fullscreen.vert.glsl?raw';
 import simSurfaceShaderChunk from '../shaders/sim/simSurface.glsl?raw';
@@ -46,7 +47,10 @@ export const CAUSTIC_COUPLING = {
   /** Smoothed sim-height Laplacian (per texel²) → concentration signal before its soft clamp. */
   concGain: 120,
   drift: 'warp',
-  /** Default drift rate per mode: warp-lattice units / s, or cell orbit cycles / s (similar apparent speed). */
+  /**
+   * Default drift rate per mode: warp-lattice units / s, or cell orbit cycles / s (similar apparent speed).
+   * Owner eval candidate for warp: 0.06 via `causticDriftSpeed=0.06` (not the code default).
+   */
   driftSpeed: { off: 0, warp: 0.015, cells: 0.008 },
 };
 
@@ -155,6 +159,7 @@ function createCausticPath(coupling, causticView, variant) {
  *   2 = raw network; rebuilt field only: 3 = fold view, 4 = concentration view.
  * @param {object} [options.causticCoupling] Overrides for `CAUSTIC_COUPLING` (rebuilt field only).
  * @param {1 | 2 | 3} [options.causticVariant] E3 structural variant (rebuilt field only).
+ * @param {'full' | 'half' | 'quarter' | 'halfHybrid'} [options.causticResolution] E4 field pass (dev).
  * @param {{ chunk: string, defines: object, uniforms: object, apply: Function }} [options.devCaustics]
  *   Dev-only caustic comparison path (Stage E0 harness); replaces `caustics`; absent in normal use.
  */
@@ -167,19 +172,32 @@ export function createSurfaceComposite({
   causticView = 0,
   causticCoupling = {},
   causticVariant = CAUSTIC_STRUCTURE.variant,
+  causticResolution = 'full',
   devCaustics = null,
 }) {
   const causticPath = devCaustics
     ?? (caustics === 'new' ? createCausticPath(causticCoupling, causticView, causticVariant) : null);
+  const useFieldPass = causticPath && causticResolution !== 'full' && CAUSTIC_RES_MODES.includes(causticResolution);
+  const fieldHybrid = causticResolution === 'halfHybrid';
+  const fieldScale = causticResolution === 'quarter' ? 0.25 : 0.5;
+  if (fieldHybrid && causticVariant === 2) {
+    console.warn('[sim] causticRes=halfHybrid falls back to shaped upsample for variant 2 (F3 strand data).');
+  }
   const causticChunk = causticPath ? `${causticPath.chunk}\n` : '';
   const causticDefines = causticPath
-    ? { ...causticPath.defines, ...(causticView ? { CAUSTIC_VIEW: String(causticView) } : {}) }
+    ? {
+        ...causticPath.defines,
+        ...(causticView ? { CAUSTIC_VIEW: String(causticView) } : {}),
+        ...(useFieldPass ? { CAUSTIC_FIELD_TEX: '' } : {}),
+        ...(useFieldPass && fieldHybrid && causticVariant !== 2 ? { CAUSTIC_PASS_HYBRID: '' } : {}),
+      }
     : {};
   const material = new ShaderMaterial({
     vertexShader: fullscreenVertexShader,
     fragmentShader: `${simSurfaceShaderChunk}\n${causticChunk}${surfaceFragmentShader}`,
     uniforms: {
       ...causticPath?.uniforms,
+      ...(useFieldPass ? { uCausticField: { value: null } } : {}),
       uState: { value: null },
       uGridSize: { value: new Vector2(1, 1) },
       uPadding: { value: padding },
@@ -226,10 +244,42 @@ export function createSurfaceComposite({
   const mesh = new Mesh(new PlaneGeometry(2, 2), material);
   mesh.frustumCulled = false;
   mesh.name = 'simWaterComposite';
-  mesh.userData.causticCoupling = causticPath?.summary ?? null;
+  const couplingSummary = causticPath?.summary
+    ? { ...causticPath.summary, resolution: useFieldPass ? causticResolution : 'full' }
+    : null;
+  mesh.userData.causticCoupling = couplingSummary;
+
   const curvature = causticPath?.curvature ?? null;
-  /** Per-frame work before drawing (Stage E2 curvature from the current sim state). */
-  mesh.userData.prepare = (renderer, stateTexture) => curvature?.update(renderer, stateTexture);
-  mesh.userData.dispose = () => curvature?.dispose();
+  const passUniforms = {
+    uState: material.uniforms.uState,
+    uGridSize: material.uniforms.uGridSize,
+    uPadding: material.uniforms.uPadding,
+    uNormalStrength: material.uniforms.uNormalStrength,
+    uWorldScale: material.uniforms.uWorldScale,
+    ...causticPath?.uniforms,
+  };
+  const fieldPass = useFieldPass
+    ? createCausticFieldPass({
+        scale: fieldScale,
+        hybrid: fieldHybrid && causticVariant !== 2,
+        defines: causticPath.defines,
+        uniforms: passUniforms,
+        cubicHeight,
+      })
+    : null;
+  if (fieldPass) material.uniforms.uCausticField.value = fieldPass.texture;
+
+  /** Per-frame work before drawing (E2 curvature + optional E4 field pass). */
+  mesh.userData.prepare = (renderer, stateTexture) => {
+    curvature?.update(renderer, stateTexture);
+    if (fieldPass) {
+      const size = renderer.getDrawingBufferSize(new Vector2());
+      fieldPass.update(renderer, size.x, size.y);
+    }
+  };
+  mesh.userData.dispose = () => {
+    curvature?.dispose();
+    fieldPass?.dispose();
+  };
   return mesh;
 }

@@ -39,6 +39,59 @@ uniform int uImpulseCount;
 // volume piles up into a slow screen-wide depression.
 uniform float uRimScale;
 
+#ifdef IDLE_SOURCE
+// Slow macro forcing (dedicated idle-motion stage); pointer splats unchanged below.
+uniform float uIdleTime;
+uniform float uIdleStrength;
+uniform float uIdleSpatial;
+uniform float uIdleSpeed;
+uniform float uIdleMix;
+uniform float uIdleMidWeight;
+uniform float uIdleFineWeight;
+// Softly tapers idle kicks where |h| is already large (idle-only; not pointer headroom).
+uniform float uIdleHeightCap;
+
+float idleHash21(vec2 p) {
+  p = fract(p * vec2(0.1031, 0.1030));
+  p += dot(p, p + 33.33);
+  return fract(p.x * p.y);
+}
+
+float idleValueNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = idleHash21(i);
+  float b = idleHash21(i + vec2(1.0, 0.0));
+  float c = idleHash21(i + vec2(0.0, 1.0));
+  float d = idleHash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// Zero-mean in time at each texel (sin carriers) with slow spatial phase / rate variation.
+float idleOscillator(vec2 texelPos, float cellSize, float rateMul, float phaseMul) {
+  vec2 p = texelPos / max(cellSize, 1.0);
+  float seed = idleValueNoise(p);
+  float seed2 = idleValueNoise(p + vec2(41.7, -19.2));
+  float phase = (seed * 2.0 - 1.0) * 3.14159265 * phaseMul;
+  float rate = mix(0.62, 1.38, seed2) * rateMul;
+  return sin(uIdleTime * uIdleSpeed * rate + phase);
+}
+
+float idleVelocityForcing(vec2 texelPos, float sponge, float height) {
+  if (uIdleMix <= 0.0 || sponge >= 1.0) return 0.0;
+  float broad = idleOscillator(texelPos, uIdleSpatial, 1.0, 1.0);
+  float mid = idleOscillator(texelPos, uIdleSpatial * 0.42, 1.31, 1.7);
+  float force = broad + uIdleMidWeight * mid;
+#ifdef IDLE_LAYER3
+  float fine = idleOscillator(texelPos, uIdleSpatial * 0.18, 2.05, 2.4);
+  force += uIdleFineWeight * fine;
+#endif
+  float headroom = clamp(1.0 - abs(height) / max(uIdleHeightCap, 1e-4), 0.0, 1.0);
+  return uIdleStrength * uIdleMix * (1.0 - sponge) * headroom * force;
+}
+#endif
+
 vec2 fetchState(ivec2 p, ivec2 size) {
   return texelFetch(uState, clamp(p, ivec2(0), size - 1), 0).rg;
 }
@@ -108,6 +161,10 @@ void main() {
 
   // Symplectic Euler: velocity first, then height with the new velocity.
   v = (v + uCourant2 * laplacian) * velocityDamping;
+
+#ifdef IDLE_SOURCE
+  v += idleVelocityForcing(center, sponge, h);
+#endif
 
   for (int i = 0; i < MAX_SEGMENTS; i++) {
     if (i >= uSegmentCount) break;

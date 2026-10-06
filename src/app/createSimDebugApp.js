@@ -4,12 +4,19 @@ import { bindVisibility } from './visibility.js';
 import { createTopDownCamera } from '../render/camera.js';
 import { COLOR_DEEP } from '../render/createWaterMesh.js';
 import {
+  CAUSTIC_COUPLING,
   CAUSTIC_DRIFT_MODES,
   CAUSTIC_STRUCTURE,
   CAUSTIC_VARIANTS,
   SIM_HEIGHT_SCALE,
   createSurfaceComposite,
 } from '../render/createSurfaceComposite.js';
+import { CAUSTIC_RES_MODES } from '../render/createCausticFieldPass.js';
+import {
+  IDLE_DEFAULTS,
+  IDLE_REDUCED_MOTION_SCALE,
+  resolveIdleFromQuery,
+} from '../sim/idleSource.js';
 import { createLegacyCausticsDev } from '../render/legacyCausticsDev.js';
 import { createSimPointer } from '../interaction/simPointer.js';
 import {
@@ -133,6 +140,23 @@ function resolveCausticVariant(query, caustics) {
 }
 
 /**
+ * `causticRes=full|half|quarter|halfHybrid` (Stage E4; rebuilt field only).
+ * @param {URLSearchParams} query
+ * @param {'off' | 'legacy' | 'new'} caustics
+ */
+function resolveCausticResolution(query, caustics) {
+  if (!query.has('causticRes')) return 'full';
+  if (caustics !== 'new') {
+    console.warn('[sim] causticRes applies only to `water&caustics=new`; ignored.');
+    return 'full';
+  }
+  const mode = query.get('causticRes');
+  if (CAUSTIC_RES_MODES.includes(mode)) return mode;
+  console.warn(`[sim] unknown causticRes=${mode} (use ${CAUSTIC_RES_MODES.join(' | ')}); full kept.`);
+  return 'full';
+}
+
+/**
  * GPU pass timing via EXT_disjoint_timer_query_webgl2 (dev only).
  * @param {WebGL2RenderingContext} gl
  */
@@ -195,9 +219,13 @@ function createGpuTimer(gl) {
  * `causticView=fold|conc` (fold / concentration views), `causticBend=<n>`, `causticMaxTilt=<n>`, `causticFoldLimit=<n>`,
  * `causticConc=<n>`, `causticConcGain=<n>`, `causticDrift=off|warp|cells`, `causticDriftSpeed=<n>`,
  * `causticVariant=1|2|3` (Stage E3: one layer / one layer + F3 nodes and strands / two layers),
+ * `causticRes=full|half|quarter|halfHybrid` (Stage E4 reduced-res field; default full),
  * `normals` (normal view), `cubic` (B-spline height sampling in the height / normal views),
  * `normalStrength=<n>`, `debugPadding` (show sponge margin), `gain=<n>`, `simFps=<n>` (throttle render loop),
- * `testImpulses` (replay the Stage A impulses). Console: `__fluidSim.impulse(x, y, amplitude, radius)`,
+ * `testImpulses` (replay the Stage A impulses). Idle motion (water view): on by default;
+ * `idle=off`, `idleStrength=<n>`, `idleSpatial=<n>`, `idleSpeed=<n>`, `idleMix=<n>`, `idleLayers=2|3`, `idleHeightCap=<n>`.
+ * Eval caustic drift candidate: `causticDrift=warp&causticDriftSpeed=0.06` (code default remains 0.015).
+ * Console: `__fluidSim.impulse(x, y, amplitude, radius)`,
  * `__fluidSim.tap(x, y)`, `__fluidSim.pause()` / `resume()` / `step(n)`.
  * @param {HTMLElement} root
  */
@@ -226,8 +254,26 @@ export function createSimDebugApp(root) {
     console.warn('[sim] causticView=fold|conc needs `caustics=new`; showing caustic light instead.');
     causticView = 1;
   }
-  const causticCoupling = resolveCausticCoupling(query, caustics);
+  let causticCoupling = resolveCausticCoupling(query, caustics);
   const causticVariant = resolveCausticVariant(query, caustics);
+  const causticResolution = resolveCausticResolution(query, caustics);
+
+  const reducedMotionQuery =
+    typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  const reducedMotion = reducedMotionQuery?.matches ?? false;
+  const motionScale = reducedMotion ? IDLE_REDUCED_MOTION_SCALE : 1;
+  if (reducedMotion && caustics === 'new') {
+    const drift = causticCoupling.drift ?? CAUSTIC_COUPLING.drift;
+    if (drift !== 'off') {
+      const baseSpeed =
+        typeof causticCoupling.driftSpeed === 'number'
+          ? causticCoupling.driftSpeed
+          : CAUSTIC_COUPLING.driftSpeed[drift];
+      causticCoupling = { ...causticCoupling, driftSpeed: baseSpeed * motionScale };
+    }
+  }
+
+  const idleOverrides = resolveIdleFromQuery(query, showWater);
 
   const camera = createTopDownCamera();
   const renderer = new WebGLRenderer({
@@ -246,7 +292,8 @@ export function createSimDebugApp(root) {
     return { renderer, dispose: () => renderer.dispose() };
   }
 
-  const sim = createWaterSim(renderer);
+  const sim = createWaterSim(renderer, { idleSource: showWater });
+  if (showWater) sim.applyIdle(idleOverrides, motionScale);
   const pointer = createSimPointer({ canvas: renderer.domElement, sim });
 
   const pendingTestImpulses = replayTestImpulses ? [...TEST_IMPULSES] : [];
@@ -263,6 +310,7 @@ export function createSimDebugApp(root) {
       causticView,
       causticCoupling,
       causticVariant,
+      causticResolution,
       devCaustics: caustics === 'legacy' ? createLegacyCausticsDev() : null,
     });
     viewMesh.material.uniforms.uCameraPosition.value.copy(camera.position);
@@ -274,12 +322,19 @@ export function createSimDebugApp(root) {
       ? ` | variant ${coupling.variant} | bend ${coupling.bend} (max tilt ${coupling.maxTilt}, fold limit ${coupling.foldLimit})` +
         `, concentration ${coupling.conc}` +
         ` (gain ${coupling.concGain}), drift ${coupling.drift}` +
-        `${coupling.drift === 'off' ? '' : ` @ ${coupling.driftSpeed}`}`
+        `${coupling.drift === 'off' ? '' : ` @ ${coupling.driftSpeed}`}` +
+        `${coupling.resolution && coupling.resolution !== 'full' ? `, res ${coupling.resolution}` : ''}`
       : '';
+    const idleLabel =
+      idleOverrides.mix > 0
+        ? ` | idle mix ${idleOverrides.mix} strength ${(idleOverrides.strength * motionScale).toFixed(4)}` +
+          ` spatial ${idleOverrides.spatial} speed ${idleOverrides.speed} layers ${idleOverrides.layers}` +
+          (reducedMotion ? ' (reduced motion)' : '')
+        : ' | idle off';
     console.info(
       `[sim] view: water composite (normal strength ${normalStrength}, ${samplingLabel} height` +
         `, height scale ${SIM_HEIGHT_SCALE}${debugOptics ? `, optics debug ${debugOptics}` : ''}` +
-        `; caustics ${caustics}${viewLabel}${couplingLabel})`,
+        `; caustics ${caustics}${viewLabel}${couplingLabel}${idleLabel})`,
     );
   } else {
     const debugMaterial = new ShaderMaterial({

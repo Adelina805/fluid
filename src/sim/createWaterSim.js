@@ -16,6 +16,7 @@ import {
 } from 'three';
 import fullscreenVertexShader from '../shaders/fullscreen.vert.glsl?raw';
 import simStepFragmentShader from '../shaders/sim/simStep.frag.glsl?raw';
+import { advanceIdleTime, applyIdleParams, createIdleUniforms } from './idleSource.js';
 
 /** Visible sim texels on the long screen axis; the short axis is aspect-matched. */
 export const SIM_RESOLUTION = 256;
@@ -104,13 +105,12 @@ function createStateTarget(width, height) {
 /**
  * Low-res ping-pong heightfield (R = height, G = velocity).
  * @param {import('three').WebGLRenderer} renderer
+ * @param {{ idleSource?: boolean }} [options] compile idle velocity forcing (dev water view)
  */
-export function createWaterSim(renderer) {
+export function createWaterSim(renderer, options = {}) {
+  const compileIdleSource = options.idleSource === true;
   const camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  const material = new ShaderMaterial({
-    vertexShader: fullscreenVertexShader,
-    fragmentShader: simStepFragmentShader,
-    uniforms: {
+  const stepUniforms = {
       uState: { value: null },
       uGridSize: { value: new Vector2(1, 1) },
       uPadding: { value: SIM_EDGE_PADDING },
@@ -126,10 +126,17 @@ export function createWaterSim(renderer) {
       uImpulseCount: { value: 0 },
       uRimScale: { value: RIM_SCALE },
       uPushDepth: { value: PUSH_DEPTH },
-    },
+  };
+  if (compileIdleSource) Object.assign(stepUniforms, createIdleUniforms());
+
+  const material = new ShaderMaterial({
+    vertexShader: fullscreenVertexShader,
+    fragmentShader: simStepFragmentShader,
+    uniforms: stepUniforms,
     defines: {
       MAX_SEGMENTS,
       MAX_IMPULSES,
+      ...(compileIdleSource ? { IDLE_SOURCE: '' } : {}),
     },
     depthTest: false,
     depthWrite: false,
@@ -346,6 +353,7 @@ export function createWaterSim(renderer) {
       if (i === 0 || impulseQueue.length > 0) flushQueues();
       step();
       clearStepUniforms();
+      if (compileIdleSource) advanceIdleTime(material.uniforms.uIdleTime, 1, SIM_STEP_HZ);
     }
     renderer.setRenderTarget(previousTarget);
   }
@@ -398,6 +406,12 @@ export function createWaterSim(renderer) {
     hasQueuedInput,
     takeInputCounts,
     readStats,
+    /** Dev: tune idle forcing (requires `idleSource: true` at creation). */
+    applyIdle(overrides, motionScale = 1) {
+      if (!compileIdleSource) return;
+      applyIdleParams(material, overrides, motionScale);
+    },
+    getStepMaterial: () => material,
     getTexture: () => targets[readIndex].texture,
     getReadIndex: () => readIndex,
     getStepCount: () => stepCount,

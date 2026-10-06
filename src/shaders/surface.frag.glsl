@@ -209,7 +209,24 @@ void main() {
 #else
   // Normal strength × sim texels per world unit (grid is aspect-matched, so either axis).
   float causticFoldScale = uNormalStrength * (uGridSize.y - 2.0 * uPadding) / (2.0 * uWorldScale.y);
-  float netRaw = causticField(worldPos.xy, N.xy, simUv, causticFoldScale);
+  float netRaw;
+#if defined(CAUSTIC_VIEW) && CAUSTIC_VIEW >= 3
+  netRaw = causticField(worldPos.xy, N.xy, simUv, causticFoldScale);
+#elif defined(CAUSTIC_FIELD_TEX)
+  #ifdef CAUSTIC_PASS_HYBRID
+  vec2 edges = texture2D(uCausticField, vUv).rg;
+  float lap;
+  vec2 q;
+  vec2 p;
+  vec2 detail;
+  causticFieldPrep(worldPos.xy, N.xy, simUv, causticFoldScale, lap, q, p, detail);
+  netRaw = causticFieldShape(edges, detail, lap);
+  #else
+  netRaw = texture2D(uCausticField, vUv).r;
+  #endif
+#else
+  netRaw = causticField(worldPos.xy, N.xy, simUv, causticFoldScale);
+#endif
 #endif
   float netGate = mix(0.52, 1.0, softBand) * mix(0.68, 1.05, NdotL);
   float net = netRaw * netGate * uCausticNetIntensity;
