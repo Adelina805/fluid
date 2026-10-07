@@ -76,6 +76,21 @@ export const CAUSTIC_STRUCTURE = {
   crossGain: 0.9,
 };
 
+/**
+ * Stage E5 visual tuning — rebuilt caustics, Variant 3 + halfHybrid target only.
+ * Applied after `applyCausticParams` (does not change `CAUSTIC_NET` or the public panel / legacy mesh).
+ */
+/** E5b: line-width span + mild warp only — no lattice coarsening or crossing attenuation. */
+export const CAUSTIC_REBUILT_E5 = Object.freeze({
+  intensityMul: 1.0,
+  scaleMul: 1.0,
+  sharpnessMul: 1.0,
+  /** Curvier cells without spatial masking. */
+  warpMul: 1.08,
+  /** Hairline → broad ribbon (fraction of uCausticNetSharpness); structure gains from CAUSTIC_STRUCTURE. */
+  lineWidth: Object.freeze([0.06, 1.22]),
+});
+
 /** Uniforms of the E3 structural variant (none for variant 1). */
 function createStructureUniforms(variant) {
   const s = CAUSTIC_STRUCTURE;
@@ -139,7 +154,18 @@ function createCausticPath(coupling, causticView, variant) {
       uTime: { value: 0 },
       ...createStructureUniforms(variant),
     },
-    apply: applyCausticParams,
+    apply(u, params) {
+      applyCausticParams(u, params);
+      if (variant !== 3) return;
+      const e5 = CAUSTIC_REBUILT_E5;
+      u.uCausticNetIntensity.value *= e5.intensityMul;
+      u.uCausticNetScale.value *= e5.scaleMul;
+      u.uCausticNetSharpness.value *= e5.sharpnessMul;
+      u.uCausticNetWarp.value *= e5.warpMul;
+      if (u.uCausticLineWidth) {
+        u.uCausticLineWidth.value.set(e5.lineWidth[0], e5.lineWidth[1]);
+      }
+    },
     curvature,
     summary: { variant, bend, maxTilt, foldLimit, conc, concGain, drift, driftSpeed },
   };

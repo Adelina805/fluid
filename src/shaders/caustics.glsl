@@ -161,7 +161,10 @@ vec4 causticWorley3(vec2 p) {
 float causticLineE3(float e, float width, float tw) {
   float w = max(width, 1.5 * fwidth(e));
   float line = 1.0 - smoothstep(0.0, w, e);
-  return pow(max(line, 0.0), mix(1.15, 2.0, tw));
+  line = pow(max(line, 0.0), mix(1.15, 2.0, tw));
+  // E5b: soft outer ribbon on thick segments only (local width, not field attenuation).
+  float ribbon = smoothstep(0.5, 0.82, tw) * (1.0 - smoothstep(0.0, w * 2.25, e)) * 0.3;
+  return max(line, ribbon);
 }
 #endif
 
