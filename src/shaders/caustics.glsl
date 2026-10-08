@@ -154,18 +154,20 @@ vec4 causticWorley3(vec2 p) {
 
 #if CAUSTIC_VARIANT >= 2
 /**
- * E3 line profile on an F-difference `e` (0 on the line). `tw` = thickness class, 0 hairline … 1 thick:
- * thin lines keep a near-linear crisp profile, thick ones a softer shoulder around a bright core.
- * Never narrower than ~1.5 px.
+ * E5 luminous line profile on an F-difference `e` (0 on the line). `tw` = thickness class, 0 hairline … 1 thick.
+ * Bright core plus an optical halo on every line: hairlines get a narrow, faint feather, thick lines a
+ * broad soft falloff. The halo fades under the core so the peak stays near 1. Core never narrower than ~1.5 px.
  */
 float causticLineE3(float e, float width, float tw) {
-  float w = max(width, 1.5 * fwidth(e));
-  float line = 1.0 - smoothstep(0.0, w, e);
-  line = pow(max(line, 0.0), mix(1.15, 1.85, tw));
-  // E5c: broader luminous ribbons on thick segments (local width, not spatial masking).
-  float ribbon = smoothstep(0.42, 0.78, tw) * (1.0 - smoothstep(0.0, w * 3.1, e)) * 0.44;
-  float ribbonWide = smoothstep(0.58, 0.9, tw) * (1.0 - smoothstep(0.0, w * 4.6, e)) * 0.30;
-  return max(line, max(ribbon, ribbonWide));
+  float px = fwidth(e);
+  float w = max(width, 1.5 * px);
+  float coreW = max(w * mix(0.6, 0.85, tw), 1.75 * px);
+  float core = 1.0 - smoothstep(0.0, coreW, e);
+  core = pow(max(core, 0.0), mix(1.05, 1.5, tw));
+  // Hairline halos would collapse to sub-pixel width; keep a few pixels of feather.
+  float halo = 1.0 - smoothstep(0.0, max(w * mix(2.2, 5.5, tw), 5.0 * px), e);
+  halo *= halo * mix(0.22, 0.42, tw);
+  return core + halo * (1.0 - core * 0.6);
 }
 #endif
 
@@ -285,10 +287,14 @@ float causticFieldShape(vec2 edges, vec2 detail, float thickL2, float macroPulse
   float line2Width = sharp * mix(uCausticLineWidth.x, uCausticLineWidth.y * 0.6, tw2 * tw2) * thickB * 0.85;
   float line2 = causticLineE3(edges.y, line2Width, tw2);
   float crossing = line1 * line2;
+  // Geometric mean of the two feathered lines: a rounded corona around crossings, peaking on the node.
+  float crossBloom = sqrt(max(crossing, 0.0));
+  float crossCore = mix(crossing, crossBloom, 0.3);
   float crossW = uCausticCrossGain * mix(0.92, 1.0, smoothstep(0.3, 0.7, macroPulse));
   float network = line1 * mix(0.7, 0.9, tw) + line2 * uCausticLayer2Gain
-    + crossing * crossW + pow(crossing, 1.25) * 0.5;
-  float pool = pow(max(network, 0.0), 0.62) * mix(0.17, 0.28, macroPulse);
+    + crossCore * crossW + pow(crossing, 1.25) * 0.5
+    + crossBloom * mix(0.2, 0.3, macroPulse);
+  float pool = pow(max(network, 0.0), 0.62) * mix(0.1, 0.16, macroPulse);
   return min(network * pulse * gain + glow + pool, 2.8);
 #endif
 }
