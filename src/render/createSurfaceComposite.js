@@ -281,6 +281,7 @@ export function createSurfaceComposite({
     uGridSize: material.uniforms.uGridSize,
     uPadding: material.uniforms.uPadding,
     uNormalStrength: material.uniforms.uNormalStrength,
+    uSimHeightScale: material.uniforms.uSimHeightScale,
     uWorldScale: material.uniforms.uWorldScale,
     ...causticPath?.uniforms,
   };

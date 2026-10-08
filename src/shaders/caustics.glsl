@@ -161,10 +161,11 @@ vec4 causticWorley3(vec2 p) {
 float causticLineE3(float e, float width, float tw) {
   float w = max(width, 1.5 * fwidth(e));
   float line = 1.0 - smoothstep(0.0, w, e);
-  line = pow(max(line, 0.0), mix(1.15, 2.0, tw));
-  // E5b: soft outer ribbon on thick segments only (local width, not field attenuation).
-  float ribbon = smoothstep(0.5, 0.82, tw) * (1.0 - smoothstep(0.0, w * 2.25, e)) * 0.3;
-  return max(line, ribbon);
+  line = pow(max(line, 0.0), mix(1.15, 1.85, tw));
+  // E5c: broader luminous ribbons on thick segments (local width, not spatial masking).
+  float ribbon = smoothstep(0.42, 0.78, tw) * (1.0 - smoothstep(0.0, w * 3.1, e)) * 0.44;
+  float ribbonWide = smoothstep(0.58, 0.9, tw) * (1.0 - smoothstep(0.0, w * 4.6, e)) * 0.30;
+  return max(line, max(ribbon, ribbonWide));
 }
 #endif
 
@@ -204,16 +205,23 @@ float causticConcentration(float lap) {
   return k / (1.0 + abs(k));
 }
 
-/** Bend + domain warp → Worley sample position `p` and thickness / pulse noise `detail`. */
+/**
+ * Bend + domain warp → Worley sample position `p` and thickness / macro-brightness noise.
+ * `detail.x` = layer-1 thickness; `thickL2` = independent layer-2 thickness (legacy ×3.05);
+ * `macroPulse` = low-frequency brightness (legacy ×0.85), separate from thickness.
+ */
 void causticFieldPrep(
   vec2 worldXY,
   vec2 tilt,
   vec2 simUv,
   float foldScale,
+  float surfHeight,
   out float lap,
   out vec2 q,
   out vec2 p,
-  out vec2 detail
+  out vec2 detail,
+  out float thickL2,
+  out float macroPulse
 ) {
   lap = causticCurvature(simUv);
   q = causticLookup(worldXY, tilt, lap, foldScale);
@@ -223,7 +231,10 @@ void causticFieldPrep(
 #endif
   vec2 warp = causticNoise2(warpUv) * 2.0 - 1.0;
   p = q * uCausticNetScale + warp * uCausticNetWarp;
+  p += vec2(surfHeight * 14.0, 0.0) * (uCausticNetWarp * 0.55);
   detail = causticNoise2(q * 2.15 + vec2(23.7, -41.3));
+  thickL2 = causticNoise2(q * 3.05 + vec2(-17.2, 31.4)).x;
+  macroPulse = causticNoise2(q * 0.85 + vec2(5.1, -8.3)).x;
 }
 
 /** Worley F2−F1 distances at `p` (E4 reduced-res pass / hybrid composite; variants 1 and 3). */
@@ -243,7 +254,7 @@ vec2 causticFieldEdgeDistances(vec2 p, vec2 detail) {
  * Display-res line shaping from edge distances (hybrid path: distances upsampled, shaping here).
  * `edges` = (e1, e2); variant 2 uses e2 as F3−F2 continuation when hybrid pass stored it.
  */
-float causticFieldShape(vec2 edges, vec2 detail, float lap) {
+float causticFieldShape(vec2 edges, vec2 detail, float thickL2, float macroPulse, float lap) {
   float widthScale = 1.0;
   float gain = 1.0;
   float glow = 0.0;
@@ -251,10 +262,11 @@ float causticFieldShape(vec2 edges, vec2 detail, float lap) {
   float conc = causticConcentration(lap) * uCausticConc;
   widthScale = max(1.0 + 0.3 * conc, 0.55);
   gain = max(1.0 + 0.5 * conc, 0.4);
-  glow = 0.12 * max(conc, 0.0);
+  glow = 0.18 * max(conc, 0.0);
 #endif
 
-  float pulse = mix(0.62, 1.18, detail.y);
+  // E5c luminance: higher floor keeps the field readable; ceiling preserves contrast.
+  float pulse = mix(0.74, 1.22, macroPulse);
 
 #if CAUSTIC_VARIANT == 1
   float e = edges.x;
@@ -262,19 +274,22 @@ float causticFieldShape(vec2 edges, vec2 detail, float lap) {
   float width = max(max(uCausticNetSharpness, 0.015) * thick * widthScale, 2.0 * fwidth(e));
   float line = 1.0 - smoothstep(0.0, width, e);
   line = pow(max(line, 0.0), mix(1.35, 2.15, 1.0 - thick * 0.32));
-  return line * 0.70 * pulse * gain + glow;
+  return min(line * 0.70 * pulse * gain + glow, 2.8);
 #else
   float sharp = max(uCausticNetSharpness, 0.015) * widthScale;
-  float tw = smoothstep(0.22, 0.85, detail.x);
+  float tw = smoothstep(0.18, 0.88, detail.x);
   float line1Width = sharp * mix(uCausticLineWidth.x, uCausticLineWidth.y, tw * tw);
   float line1 = causticLineE3(edges.x, line1Width, tw);
-  float tw2 = smoothstep(0.25, 0.85, detail.y);
-  float line2Width = sharp * mix(uCausticLineWidth.x, uCausticLineWidth.y * 0.6, tw2 * tw2);
+  float tw2 = smoothstep(0.22, 0.88, thickL2);
+  float thickB = mix(0.65, 1.25, thickL2);
+  float line2Width = sharp * mix(uCausticLineWidth.x, uCausticLineWidth.y * 0.6, tw2 * tw2) * thickB * 0.85;
   float line2 = causticLineE3(edges.y, line2Width, tw2);
   float crossing = line1 * line2;
+  float crossW = uCausticCrossGain * mix(0.92, 1.0, smoothstep(0.3, 0.7, macroPulse));
   float network = line1 * mix(0.7, 0.9, tw) + line2 * uCausticLayer2Gain
-    + crossing * uCausticCrossGain + pow(crossing, 1.25) * 0.5;
-  return network * pulse * gain + glow;
+    + crossing * crossW + pow(crossing, 1.25) * 0.5;
+  float pool = pow(max(network, 0.0), 0.62) * mix(0.17, 0.28, macroPulse);
+  return min(network * pulse * gain + glow + pool, 2.8);
 #endif
 }
 
@@ -283,12 +298,14 @@ float causticFieldShape(vec2 edges, vec2 detail, float lap) {
  * `tilt` = surface normal xy; `simUv` locates the smoothed curvature (fold limit, concentration);
  * `foldScale` = normal strength × sim texels per world unit.
  */
-float causticField(vec2 worldXY, vec2 tilt, vec2 simUv, float foldScale) {
+float causticField(vec2 worldXY, vec2 tilt, vec2 simUv, float foldScale, float surfHeight) {
   float lap;
   vec2 q;
   vec2 p;
   vec2 detail;
-  causticFieldPrep(worldXY, tilt, simUv, foldScale, lap, q, p, detail);
+  float thickL2;
+  float macroPulse;
+  causticFieldPrep(worldXY, tilt, simUv, foldScale, surfHeight, lap, q, p, detail, thickL2, macroPulse);
 
 #if CAUSTIC_VARIANT == 2
   float widthScale = 1.0;
@@ -300,7 +317,7 @@ float causticField(vec2 worldXY, vec2 tilt, vec2 simUv, float foldScale) {
   gain = max(1.0 + 0.5 * conc, 0.4);
   glow = 0.12 * max(conc, 0.0);
 #endif
-  float pulse = mix(0.62, 1.18, detail.y);
+  float pulse = mix(0.74, 1.22, macroPulse);
   float sharp = max(uCausticNetSharpness, 0.015) * widthScale;
   float tw = smoothstep(0.22, 0.85, detail.x);
   float line1Width = sharp * mix(uCausticLineWidth.x, uCausticLineWidth.y, tw * tw);
@@ -309,12 +326,12 @@ float causticField(vec2 worldXY, vec2 tilt, vec2 simUv, float foldScale) {
   float e23 = w.z - w.y;
   float strand = causticLineE3(e23, sharp * mix(uCausticLineWidth.x, uCausticLineWidth.y * 0.22, tw), 0.0);
   strand *= step(1.0 - uCausticStrandCells, w.w);
-  float node = pow(line1 * causticLineE3(e23, line1Width, tw), 1.25) * smoothstep(0.42, 0.75, detail.y);
+  float node = pow(line1 * causticLineE3(e23, line1Width, tw), 1.25) * smoothstep(0.42, 0.75, thickL2);
   float network = line1 * mix(0.7, 0.9, tw) + strand * uCausticStrandGain + node * uCausticNodeGain;
-  return network * pulse * gain + glow;
+  return min(network * pulse * gain + glow, 2.8);
 #else
   vec2 edges = causticFieldEdgeDistances(p, detail);
-  return causticFieldShape(edges, detail, lap);
+  return causticFieldShape(edges, detail, thickL2, macroPulse, lap);
 #endif
 }
 

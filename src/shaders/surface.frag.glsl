@@ -211,7 +211,7 @@ void main() {
   float causticFoldScale = uNormalStrength * (uGridSize.y - 2.0 * uPadding) / (2.0 * uWorldScale.y);
   float netRaw;
 #if defined(CAUSTIC_VIEW) && CAUSTIC_VIEW >= 3
-  netRaw = causticField(worldPos.xy, N.xy, simUv, causticFoldScale);
+  netRaw = causticField(worldPos.xy, N.xy, simUv, causticFoldScale, surfHeight);
 #elif defined(CAUSTIC_FIELD_TEX)
   #ifdef CAUSTIC_PASS_HYBRID
   vec2 edges = texture2D(uCausticField, vUv).rg;
@@ -219,13 +219,15 @@ void main() {
   vec2 q;
   vec2 p;
   vec2 detail;
-  causticFieldPrep(worldPos.xy, N.xy, simUv, causticFoldScale, lap, q, p, detail);
-  netRaw = causticFieldShape(edges, detail, lap);
+  float thickL2;
+  float macroPulse;
+  causticFieldPrep(worldPos.xy, N.xy, simUv, causticFoldScale, surfHeight, lap, q, p, detail, thickL2, macroPulse);
+  netRaw = causticFieldShape(edges, detail, thickL2, macroPulse, lap);
   #else
   netRaw = texture2D(uCausticField, vUv).r;
   #endif
 #else
-  netRaw = causticField(worldPos.xy, N.xy, simUv, causticFoldScale);
+  netRaw = causticField(worldPos.xy, N.xy, simUv, causticFoldScale, surfHeight);
 #endif
 #endif
   float netGate = mix(0.52, 1.0, softBand) * mix(0.68, 1.05, NdotL);
@@ -237,7 +239,19 @@ void main() {
     netHot * 0.72
   );
   vec3 causticLight = netTint * net * 0.42;
+#ifdef CAUSTICS_LEGACY
   color += causticLight;
+#else
+  // E5c luminance: baseline additive for continuous visibility + screen for integration on lit slopes.
+  vec3 causticLit = netTint * net * 0.48;
+  float causticEmbed = mix(0.78, 1.0, softBand)
+    * mix(0.80, 1.0, max(concentrate, 0.38))
+    * mix(0.84, 1.0, clamp(slope * 4.5 + 0.12, 0.0, 1.0))
+    * mix(0.92, 1.0, 1.0 - transW * 0.22);
+  color += causticLit * 0.26;
+  vec3 causticScreen = 1.0 - (1.0 - color) * (1.0 - causticLit);
+  color = mix(color, causticScreen, causticEmbed * 0.92);
+#endif
 #endif
 
   color = clamp(color, 0.0, 1.0);
