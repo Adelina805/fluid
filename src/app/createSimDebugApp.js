@@ -145,7 +145,7 @@ function resolveCausticVariant(query, caustics) {
  * @param {'off' | 'legacy' | 'new'} caustics
  */
 function resolveCausticResolution(query, caustics) {
-  if (!query.has('causticRes')) return 'full';
+  if (!query.has('causticRes')) return caustics === 'new' ? 'halfHybrid' : 'full';
   if (caustics !== 'new') {
     console.warn('[sim] causticRes applies only to `water&caustics=new`; ignored.');
     return 'full';
@@ -219,7 +219,7 @@ function createGpuTimer(gl) {
  * `causticView=fold|conc` (fold / concentration views), `causticBend=<n>`, `causticMaxTilt=<n>`, `causticFoldLimit=<n>`,
  * `causticConc=<n>`, `causticConcGain=<n>`, `causticDrift=off|warp|cells`, `causticDriftSpeed=<n>`,
  * `causticVariant=1|2|3` (Stage E3: one layer / one layer + F3 nodes and strands / two layers),
- * `causticRes=full|half|quarter|halfHybrid` (Stage E4 reduced-res field; default full),
+ * `causticRes=full|half|quarter|halfHybrid` (Stage E4 reduced-res field; default halfHybrid when `caustics=new`),
  * `normals` (normal view), `cubic` (B-spline height sampling in the height / normal views),
  * `normalStrength=<n>`, `debugPadding` (show sponge margin), `gain=<n>`, `simFps=<n>` (throttle render loop),
  * `testImpulses` (replay the Stage A impulses). Idle motion (water view): on by default;

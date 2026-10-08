@@ -49,9 +49,9 @@ export const CAUSTIC_COUPLING = {
   drift: 'warp',
   /**
    * Default drift rate per mode: warp-lattice units / s, or cell orbit cycles / s (similar apparent speed).
-   * Owner eval candidate for warp: 0.06 via `causticDriftSpeed=0.06` (not the code default).
+   * Warp default 0.06 (approved E3.5–E6 stack); override via `causticDriftSpeed=` on `?sim`.
    */
-  driftSpeed: { off: 0, warp: 0.015, cells: 0.008 },
+  driftSpeed: { off: 0, warp: 0.06, cells: 0.008 },
 };
 
 /** Stage E3 structural variants (dev comparison): 1 = one layer (E2), 2 = one layer + F3, 3 = two layers. */
@@ -61,8 +61,8 @@ export const CAUSTIC_VARIANTS = [1, 2, 3];
  * Stage E3 structure constants (dev; live in `__fluidSim.uniforms`). Coupling is shared by all variants.
  */
 export const CAUSTIC_STRUCTURE = {
-  /** Variant 1 is the unchanged E2 field. */
-  variant: 1,
+  /** Approved production default (E3 Variant 3). Variant 1 remains via `causticVariant=1`. */
+  variant: 3,
   /** Variants 2–3: line width as a fraction of the approved sharpness, hairline → thickest. */
   lineWidth: [0.12, 0.8],
   /** Variant 2: junction-node weight (primary line × its F3 − F2 continuation). */
@@ -185,7 +185,8 @@ function createCausticPath(coupling, causticView, variant) {
  *   2 = raw network; rebuilt field only: 3 = fold view, 4 = concentration view.
  * @param {object} [options.causticCoupling] Overrides for `CAUSTIC_COUPLING` (rebuilt field only).
  * @param {1 | 2 | 3} [options.causticVariant] E3 structural variant (rebuilt field only).
- * @param {'full' | 'half' | 'quarter' | 'halfHybrid'} [options.causticResolution] E4 field pass (dev).
+ * @param {'full' | 'half' | 'quarter' | 'halfHybrid'} [options.causticResolution] E4 field pass (approved default `halfHybrid`).
+ * @param {ReturnType<import('../controls/params.js').createParams>} [options.params] Shared tunable state (production panel).
  * @param {{ chunk: string, defines: object, uniforms: object, apply: Function }} [options.devCaustics]
  *   Dev-only caustic comparison path (Stage E0 harness); replaces `caustics`; absent in normal use.
  */
@@ -198,8 +199,9 @@ export function createSurfaceComposite({
   causticView = 0,
   causticCoupling = {},
   causticVariant = CAUSTIC_STRUCTURE.variant,
-  causticResolution = 'full',
+  causticResolution = 'halfHybrid',
   devCaustics = null,
+  params: externalParams = null,
 }) {
   const causticPath = devCaustics
     ?? (caustics === 'new' ? createCausticPath(causticCoupling, causticView, causticVariant) : null);
@@ -262,10 +264,15 @@ export function createSurfaceComposite({
     depthWrite: false,
   });
 
-  const params = createParams();
-  applyPublicControls(createPublicControls(), params);
-  applyShadingParams(material.uniforms, params);
-  causticPath?.apply(material.uniforms, params);
+  const params = externalParams ?? createParams();
+  if (!externalParams) {
+    applyPublicControls(createPublicControls(), params);
+  }
+  const syncShadingParams = (p) => {
+    applyShadingParams(material.uniforms, p);
+    causticPath?.apply(material.uniforms, p);
+  };
+  syncShadingParams(params);
 
   const mesh = new Mesh(new PlaneGeometry(2, 2), material);
   mesh.frustumCulled = false;
@@ -274,6 +281,7 @@ export function createSurfaceComposite({
     ? { ...causticPath.summary, resolution: useFieldPass ? causticResolution : 'full' }
     : null;
   mesh.userData.causticCoupling = couplingSummary;
+  mesh.userData.syncShadingParams = syncShadingParams;
 
   const curvature = causticPath?.curvature ?? null;
   const passUniforms = {
