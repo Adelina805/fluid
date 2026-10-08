@@ -829,11 +829,11 @@ The portrait capture uses DPR 1.8 rather than 3 because the emulation surface co
 
 **4. Decision outcome** — **Approved `halfHybrid`** (2026-10-07). `half` and `quarter` not promoted.
 
-**5. Follow-up** — **E5 planning** recorded below; **E5 implementation not started.** E6 verifies budget on the frozen hybrid path; E7 proposes production routing (`causticVariant=3`, `causticRes=halfHybrid`, drift `0.06`); Stage F encodes resolution in tiers.
+**5. Follow-up** — E5 completed and approved (below). E6 verifies budget on the frozen hybrid path; E7 proposes production routing (`causticVariant=3`, `causticRes=halfHybrid`, drift `0.06`); Stage F encodes resolution in tiers.
 
-- **E5 — Visual match** (**implemented 2026-10-07**, awaiting owner evaluation — [E5 evaluation plan](#e5-evaluation-plan)): on **frozen Variant 3 + `halfHybrid`** only; soften lines; reduce razor-sharp / cracked-glass / Voronoi read; stronger thick ↔ thin variation; preserve fine strands without fine structure everywhere; more open / quiet regions and occasional larger cells; stronger spatial scale mix (fine / medium / large); preserve natural bright intersections; recover Variant 1’s soft broad luminous quality and legacy’s scale/thickness variation (soft broad bands, medium lines, fine strands, quiet areas) **without** simply blurring the whole field; gate / pulse / tints / intensity rebaseline vs golden + legacy port on the sim surface. **Do not** add structural complexity beyond Variant 3; **do not** change `halfHybrid` pass split or idle / E2 coupling.
+- **E5 — Visual match** (**approved 2026-10-07** — see [E5 approved visual baseline](#e5-approved-visual-baseline-frozen)): on **frozen Variant 3 + `halfHybrid`** only; soften lines; reduce razor-sharp / cracked-glass / Voronoi read; stronger thick ↔ thin variation; preserve fine strands without fine structure everywhere; more open / quiet regions and occasional larger cells; stronger spatial scale mix (fine / medium / large); preserve natural bright intersections; recover Variant 1’s soft broad luminous quality and legacy’s scale/thickness variation (soft broad bands, medium lines, fine strands, quiet areas) **without** simply blurring the whole field; gate / pulse / tints / intensity rebaseline vs golden + legacy port on the sim surface. **Do not** add structural complexity beyond Variant 3; **do not** change `halfHybrid` pass split or idle / E2 coupling.
 
-#### E5 evaluation plan
+#### E5 evaluation plan *(completed 2026-10-07)*
 
 *Goal:* bring the **approved E3 Variant 3 structure** on **`halfHybrid`** closer to the golden reference and legacy port **character** (softness, scale mix, brightness distribution) while keeping pool-like calm and mobile stability. **Out of scope until explicit E5 approval to implement:** any code change; public `params.js` / `panel.js` mapping; production or default-app routing; E6/E7 work.
 
@@ -877,15 +877,82 @@ The portrait capture uses DPR 1.8 rather than 3 because the emulation surface co
 - `causticRes=full` A/B still acceptable as “ground truth” but **ship target is `halfHybrid`**.
 - Document any remaining gaps carried to E6 (perf) or post-MVP polish.
 
-**6. After E5 approval (planned, not started)**
+**6. Outcome** — **Approved 2026-10-07.** Owner: current result is the visual baseline to ship for now; **no further caustic appearance tuning**. Frozen as recorded below.
 
-- **E6** — measured caustic Δ @ 1080p on primary stack (≤ ~2.3 ms Stage E budget; aim ≤ ~1.5 ms).
-- **E7** — production routing proposal only (V3 + `halfHybrid` + drift candidate; `?legacy` retained until owner retires files).
-- **Stage G** — reconnect public axes to sim + rebuilt caustics.
+#### E5 approved visual baseline *(frozen)*
 
-**STOP** — owner visual approval after E5 implementation (2026-10-07); do not start E6 until approved.
+**Approved evaluation stack** (the visual baseline; idle on = omit `idle=off`; default view, golden framings desktop ~1440×900 and portrait ~390×844):
 
-- **E6 — Performance verification**: ≤ ~2.3 ms at 1080p on the M2 (aim ≤ ~1.5 ms); phone checks; measured / estimated / inferred reported separately.
+`?sim&water&caustics=new&causticVariant=3&causticRes=halfHybrid&causticDrift=warp&causticDriftSpeed=0.06`
+
+Code defaults still differ from this stack (`causticVariant` → 1, `causticRes` → `full`, warp `driftSpeed` → 0.015) until **E7** proposes wiring it as the `caustics=new` default; the URL above is the binding reference.
+
+| Layer | Frozen (no change without explicit owner approval) |
+|-------|--------|
+| Caustic structure | E3 **Variant 3**: two sin-free Worley layers (second ×1.71), crossing + node terms |
+| Resolution path | E4 **`halfHybrid`**: ½-res RG edge distances (`createCausticFieldPass.js`, `causticsFieldPass.frag.glsl`) + display-res shaping |
+| Water motion | E3.5 idle forcing (`IDLE_DEFAULTS`) + Stage A/B sim + `simPointer.js` |
+| Surface coupling | E2 `CAUSTIC_COUPLING` (bend 0.2, maxTilt 0.3, foldLimit 0.7, conc 2.0, concGain 120) + warp drift at the `0.06` URL candidate |
+| Field prep (`causticFieldPrep`) | Warp, sim-height lattice offset (`surfHeight·14·warp·0.55`), separate layer-1 thickness (×2.15), layer-2 thickness `thickL2` (×3.05), macro brightness `macroPulse` (×0.85) |
+| Line profile (`causticLineE3`) | Luminous core + always-on halo: core width `w·mix(0.6, 0.85, tw)` (≥ 2.25 px), core exponent `mix(0.95, 1.4, tw)`; halo width `max(w·mix(2.4, 5.5, tw), 6.5 px)`, `pow(·, 1.7)`, strength `mix(0.26, 0.44, tw)`, combined `core + halo·(1 − 0.6·core)` |
+| V3 shaping (`causticFieldShape`) | Hairline floor `sharp·0.045` (layer 2 ×0.8); width curve `tw^1.6`; layer-1 weight `mix(0.66, 0.98, tw)`; crossing core `mix(crossing, sqrt(crossing), 0.3)·crossW`; thick-crossing nodes `pow(crossing, 1.25)·mix(0.45, 0.85, ·)`; crossing bloom `sqrt(crossing)·mix(0.22, 0.34, macroPulse)`; pool `pow(network, 0.62)·mix(0.07, 0.12, macroPulse)`; pulse `mix(0.74, 1.22, macroPulse)`; conc glow 0.18; ceiling 2.8 |
+| Rebuilt constants (`createSurfaceComposite.js`) | `CAUSTIC_REBUILT_E5`: intensity / scale / sharpness ×1.0, `warpMul` 1.08, `lineWidth` [0.5, 1.22]; `CAUSTIC_STRUCTURE` V3 gains (layer2Scale 1.71, layer2Gain 0.46, crossGain 0.9) |
+| Light treatment (`surface.frag.glsl`, rebuilt path only) | Legacy `netGate` / tint / hot mix; `causticLit = netTint·net·0.48`; additive `·0.26` + screen blend weighted by `causticEmbed·0.92` |
+| Product surface | Default public app, control panel, `deriveCausticParams`, `CAUSTIC_NET`, legacy `water.frag.glsl` network, `index` bundle |
+
+**Known gaps accepted for now** (not E5 work; revisit only on owner request): single-tap/drag interaction was not re-profiled after the final shaping pass; raw view saturates (×0.5 view white) in the broadest thick-strand zones; luminance was matched visually, not numerically, against the golden captures.
+
+#### E6 performance verification plan
+
+*Goal:* measure what the **approved E5 visual baseline** costs, against the Stage E budget, **without changing code or optimizing**. E6 reports numbers; any optimization is a separate, owner-approved step.
+
+**1. Fixed inputs** — the approved stack above, unmodified. Comparison configs (same session, same surface):
+
+| Config | URL delta from `?sim&water` | Role |
+|--------|------------------------------|------|
+| Off | `&caustics=off` | Baseline for caustic Δ |
+| **Approved** | approved stack | Ship candidate |
+| V3 full | approved stack with `causticRes=full` | Quantifies the `halfHybrid` saving after E5 shaping |
+| Legacy | `&caustics=legacy` | Same-session ratio (target ≤ ⅓) |
+| Isolates *(optional)* | approved stack + `causticView=raw` | Field + shaping without composite shading |
+
+**2. Method** (same as E1–E3 so numbers are comparable; no repo code changes)
+
+- Host: Apple M2, headless Chrome `--use-angle=metal` (the embedded Cursor tab cannot be used: occluded windows skip `requestAnimationFrame`; E1 note).
+- Each config in its own tab with its loop stopped via `__fluidSim.pause()`; same idle state per tab via `__fluidSim.step(n)` from load so the surface (and idle-driven curvature) is comparable.
+- **Paired, interleaved, saturated throughput:** 30 rounds × 20 back-to-back renders per tab, each round synced by a 1-px `readPixels`, rotating tabs so clock / thermal drift is shared. Report **caustic Δ = config − off** within each round: median + IQR.
+- Render = field pass + curvature pass + composite (full frame cost of caustics), not composite alone.
+- Measurement driver is a throwaway script outside the repo (console / CDP). If a reusable in-repo harness turns out to be needed, it is proposed first and not added without approval.
+
+**3. Resolutions**
+
+- **1920×1080 @ DPR 1** — the budget gate.
+- **2880×1800** (1440×900 @ 2) — golden desktop framing; M2 Air native-class buffer.
+- **780×1688** (390×844 @ 2) — portrait / phone proxy.
+
+**4. Also report**
+
+- Live frame time on the approved stack at 2880×1800 with idle running (`__fluidSimStats`, rAF interval): does it hold 60 fps? (E0 note: `gpuDebugMs` is an upper bound, not sim cost.)
+- Idle sim-step cost vs `idle=off` (E3.5 forcing), separate from caustics.
+- **Phone:** owner's real phone if available (frame pacing, visible shimmer, thermal after ~2 min); otherwise portrait headless numbers are labelled **estimated**, not measured.
+- Every figure labelled **measured / estimated / inferred**.
+
+**5. Pass / fail**
+
+| Check | Target |
+|-------|--------|
+| Approved caustic Δ @ 1080p | ≤ ~2.3 ms (≤ ⅓ of legacy ~6.3–6.6 ms); aim ≤ ~1.5 ms |
+| Approved / legacy ratio (same session) | ≤ 0.33 |
+| 2880×1800 live | Holds 60 fps on the M2 with idle on |
+| Portrait | No regression vs E4 `halfHybrid`; no shimmer |
+
+**6. Expected risk (inferred, unmeasured):** E5 added display-res shaping work on top of the E4 hybrid path (halo smoothsteps, `pow`, `sqrt` crossing bloom, extra noise lookups for `thickL2` / `macroPulse`), so the approved stack may cost more than E4's `halfHybrid` did. E4's absolute numbers were not recorded in this file, so E6 is the first recorded figure for the hybrid path.
+
+**7. If the budget fails** — report the gap and the breakdown (field pass vs display-res shaping vs curvature), then **STOP**. Possible levers are listed for the owner, not implemented: cheaper shaping math with an identical look, moving more of the shaping into the ½-res pass, Stage F resolution tiers. Any lever that changes the look needs explicit approval, since E5 is frozen.
+
+**STOP** — after E6 measurements are reported. Do not start E7 or optimize until approved.
+
+- **E6 — Performance verification** (**planned 2026-10-07**, not started — [E6 performance verification plan](#e6-performance-verification-plan)): ≤ ~2.3 ms at 1080p on the M2 (aim ≤ ~1.5 ms); phone checks; measured / estimated / inferred reported separately. Measurement only; no code or visual changes.
 - **E7 — Legacy comparison / retirement decision**: proposal only (new default + `?legacy` alias); deleting legacy files needs explicit owner approval and may wait on the idle-source decision.
 
 **STOP** — ask for visual feedback after each Stage E sub-stage.
@@ -1032,10 +1099,12 @@ The portrait capture uses DPR 1.8 rather than 3 because the emulation surface co
 | 2026-10-04 | **Stage E3 approved — structural winner Variant 3 (two sin-free Worley layers).** Dev comparison: `?sim&water&caustics=new&causticVariant=1|2|3` (+ `&causticView=raw`); variant 1 = frozen E2 one-layer field; variant 2 = one layer + F3 nodes/strands; variant 3 = dual Worley (×1.71 second layer, crossings). **Owner evaluation:** V3 closest to reference overall; best fine / multi-scale structure and pool-water character; natural intersections; convincing under ripples; mobile stable. **V3 current look is not approved as final caustics** — too sharp/thin, angular / Voronoi / cracked-glass, slightly dense/noisy, excessive overlapping fine structure; needs more scale mix (fine + medium + occasional large/open cells). **Desired direction (E5, not E3):** Variant 3 structure + Variant 1 softness + legacy scale/thickness variation (soft broad luminous bands, medium lines, fine strands, quiet areas); no whole-field blur; no complexity beyond V3. **Winner rationale:** strongest multi-scale network to tune despite cost. **Performance (E3 session, 1920×1080, paired interleaved):** caustic Δ medians V1 2.33 ms, V2 3.12 ms, V3 3.76 ms vs legacy 5.72 ms — V3 exceeds ≤ ~2.3 ms budget; **do not optimize yet**; E4 tests reduced-resolution recovery after the **dedicated idle-motion stage** (next; awaits owner prompt). E2 coupling frozen across variants. Implementation: `src/shaders/caustics.glsl`, `createSurfaceComposite.js` (`CAUSTIC_STRUCTURE`, `CAUSTIC_VARIANTS`), `createSimDebugApp.js` (`resolveCausticVariant`). |
 | 2026-10-06 | **E3.5 idle motion approved.** Owner prefers the simulation-driven water over legacy overall (more physically connected interaction). Idle still somewhat subtle; hover can read slightly decoupled from bulk surface motion — **no sim / interaction / E2 coupling retune** until explicitly requested. **Frozen:** `idleSource.js` defaults, `simStep.frag.glsl` idle block (velocity forcing only), Stage A/B sim + `simPointer.js`, E2 `CAUSTIC_COUPLING` defaults. Drift candidate `0.06` remains URL-only; code default `0.015`. Primary eval stack: `?sim&water&caustics=new&causticVariant=3&causticDrift=warp&causticDriftSpeed=0.06` with idle defaults (no `idle=off`). |
 | 2026-10-06 | **E3.5 re-verified after shader-link regression fix.** Owner confirmed primary idle configuration and water + caustic rendering restored. E3.5 freeze unchanged; no code changes to idle, sim, interaction, E2 coupling, or caustic structure. **E4 evaluation plan** recorded in PROJECT.md; E4 implementation already in tree — owner session compares `causticRes` modes only. |
-| 2026-10-06 | **Stage E4 implemented (awaiting owner evaluation): reduced-resolution caustics.** Dev `?sim&water&caustics=new`: `causticRes=full` (default, unchanged E3 path), `half` / `quarter` (pre-shaped `netRaw` field pass + bilinear upsample), `halfHybrid` (RG = Worley edge distances at ½ res, line shaping at display res; variants 1 and 3). `causticView=fold|conc` keeps full-res inline field for debug accuracy. New `createCausticFieldPass.js` + `causticsFieldPass.frag.glsl`; `caustics.glsl` refactored into prep / distances / shape. Sim, idle, pointer, E2 coupling unchanged. **STOP** — follow [E4 evaluation plan](#e4-evaluation-plan). |
+| 2026-10-06 | **Stage E4 implemented (awaiting owner evaluation): reduced-resolution caustics.** Dev `?sim&water&caustics=new`: `causticRes=full` (default, unchanged E3 path), `half` / `quarter` (pre-shaped `netRaw` field pass + bilinear upsample), `halfHybrid` (RG = Worley edge distances at ½ res, line shaping at display res; variants 1 and 3). `causticView=fold|conc` keeps full-res inline field for debug accuracy. New `createCausticFieldPass.js` + `causticsFieldPass.frag.glsl`; `caustics.glsl` refactored into prep / distances / shape. Sim, idle, pointer, E2 coupling unchanged. **STOP** — follow [E4 evaluation plan](#e4-evaluation-plan-completed-2026-10-07). |
 | 2026-10-07 | **Stage E5 implemented (awaiting owner evaluation):** Variant 3 visual tuning on rebuilt path only — `CAUSTIC_REBUILT_E5` overrides in `createSurfaceComposite.js` (intensity / scale / sharpness / warp / line width / layer2 + cross gains); softer E3 line profile, macro quiet mask + fine strand preservation, brighter pulse and rebuilt-only composite gate / hot tint in `surface.frag.glsl`. `CAUSTIC_NET`, sim, idle, E2 coupling, halfHybrid pass, public panel, and production routing unchanged. |
 | 2026-10-07 | **E5b correction (awaiting owner evaluation):** Removed V3 macro/`fineKeep` spatial attenuation; restored E3 network mix + legacy-aligned `netGate`/composite in `surface.frag.glsl`; `CAUSTIC_REBUILT_E5` reduced to wide line-width span + `warpMul` 1.08 (scale/cross/layer gains no longer overridden). Thick-segment ribbon halo in `causticLineE3` only. E5 still not approved. |
-| 2026-10-07 | **Stage E4 approved — `halfHybrid` frozen.** Owner: `halfHybrid` visually close enough to `full` on Variant 3 + primary idle stack; performance improvement justifies the tradeoff. **Frozen:** hybrid pass architecture (`createCausticFieldPass` + display-res shaping split). **Unchanged:** E3 V3 structure, E3.5 idle, E2 coupling, public controls, production routing (dev `causticRes` code default remains `full` until E7). Primary dev stack now includes `&causticRes=halfHybrid`. [E5 evaluation plan](#e5-evaluation-plan) recorded; E5 implementation not started. |
+| 2026-10-07 | **Stage E4 approved — `halfHybrid` frozen.** Owner: `halfHybrid` visually close enough to `full` on Variant 3 + primary idle stack; performance improvement justifies the tradeoff. **Frozen:** hybrid pass architecture (`createCausticFieldPass` + display-res shaping split). **Unchanged:** E3 V3 structure, E3.5 idle, E2 coupling, public controls, production routing (dev `causticRes` code default remains `full` until E7). Primary dev stack now includes `&causticRes=halfHybrid`. [E5 evaluation plan](#e5-evaluation-plan-completed-2026-10-07) recorded; E5 implementation not started. |
+| 2026-10-07 | **E5 luminous-edge passes (owner-directed, before approval).** (1) `causticLineE3` rebuilt as bright core + always-on optical halo scaled by thickness class (thick-only E5c ribbons removed); softened crossings via `sqrt(line1·line2)` bloom and a partial crossing-core blend; field-wide pool lift cut ~40%. (2) Final pass: hairline width floor, `tw^1.6` width curve, wider pixel-floored core / halo, layer-1 weight `mix(0.66, 0.98, tw)`, thick-crossing node boost, pool trimmed again to hold global luminosity. Owner set `CAUSTIC_REBUILT_E5.lineWidth` to [0.5, 1.22]. Only `caustics.glsl` and `createSurfaceComposite.js` touched; topology, `halfHybrid`, sim, idle, E2 coupling, controls unchanged. |
+| 2026-10-07 | **Stage E5 approved — visual baseline frozen.** Owner: current result is the visual baseline to ship for now; do not continue tuning caustic appearance. **Approved evaluation stack:** `?sim&water&caustics=new&causticVariant=3&causticRes=halfHybrid&causticDrift=warp&causticDriftSpeed=0.06` (idle on). **Frozen:** V3 structure, `halfHybrid`, E3.5 idle, E2 coupling, and the full caustic shaping / light treatment as listed in [E5 approved visual baseline](#e5-approved-visual-baseline-frozen). Simulation, interaction, caustic structure and visual tuning are not to change without explicit owner approval. Code defaults (`causticVariant` 1, `causticRes` full, drift 0.015) unchanged until E7. **Next:** [E6 performance verification plan](#e6-performance-verification-plan) recorded — measurement only, no code changes or optimization. |
 | 2026-10-04 | **E2 ambient drift — owner preference (candidate, not final).** Interaction coupling accepted by the owner: taps and drags affect the web, concentration looks good, coupling feels connected to the water, mobile appears stable. Ambient motion at the recommended Mode B 0.015 / s was barely perceptible on untouched water. After comparing A / B / C (including `causticDriftSpeed` 0.03 / 0.06 / 0.12 and cells 0.02 / 0.04), the owner prefers **Mode B (warp drift) at `causticDriftSpeed=0.06`**: clearly noticeable yet calm, no whole-texture scrolling, cell identity preserved, reads as slowly shifting light rather than an independently animated texture. Recorded as the **preferred / default candidate** — the code default (`CAUSTIC_COUPLING.driftSpeed.warp`) is still 0.015 until the owner asks to change it. **Mode C (cells)** stays available as a dev comparison (`causticDrift=cells`; measured +0.61 ms at 1080p, not recommended as default). **Ambient architecture decision**: most eventual caustic movement should come from the water itself — **gentle persistent idle energy inside the water simulation** (normals change continuously, so the caustics deform with the surface through the existing bend / concentration) **plus a small independent Mode B warp drift** (the 0.06 candidate) as subtle background evolution. The idle source is **deferred to a dedicated idle-motion stage** (the Stage D "idle life source" item, never implemented; placement relative to E3 / E4 to be confirmed by the owner). The water simulation is not modified in E2. E3 not started. |
 
 ---

@@ -88,7 +88,7 @@ export const CAUSTIC_REBUILT_E5 = Object.freeze({
   /** Curvier cells without spatial masking. */
   warpMul: 1.08,
   /** Hairline → broad ribbon (fraction of uCausticNetSharpness); structure gains from CAUSTIC_STRUCTURE. */
-  lineWidth: Object.freeze([0.06, 1.22]),
+  lineWidth: Object.freeze([0.5, 1.22]),
 });
 
 /** Uniforms of the E3 structural variant (none for variant 1). */
