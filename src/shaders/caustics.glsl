@@ -161,12 +161,12 @@ vec4 causticWorley3(vec2 p) {
 float causticLineE3(float e, float width, float tw) {
   float px = fwidth(e);
   float w = max(width, 1.5 * px);
-  float coreW = max(w * mix(0.6, 0.85, tw), 1.75 * px);
+  float coreW = max(w * mix(0.6, 0.85, tw), 2.25 * px);
   float core = 1.0 - smoothstep(0.0, coreW, e);
-  core = pow(max(core, 0.0), mix(1.05, 1.5, tw));
+  core = pow(max(core, 0.0), mix(0.95, 1.4, tw));
   // Hairline halos would collapse to sub-pixel width; keep a few pixels of feather.
-  float halo = 1.0 - smoothstep(0.0, max(w * mix(2.2, 5.5, tw), 5.0 * px), e);
-  halo *= halo * mix(0.22, 0.42, tw);
+  float halo = 1.0 - smoothstep(0.0, max(w * mix(2.4, 5.5, tw), 6.5 * px), e);
+  halo = pow(max(halo, 0.0), 1.7) * mix(0.26, 0.44, tw);
   return core + halo * (1.0 - core * 0.6);
 }
 #endif
@@ -280,21 +280,26 @@ float causticFieldShape(vec2 edges, vec2 detail, float thickL2, float macroPulse
 #else
   float sharp = max(uCausticNetSharpness, 0.015) * widthScale;
   float tw = smoothstep(0.18, 0.88, detail.x);
-  float line1Width = sharp * mix(uCausticLineWidth.x, uCausticLineWidth.y, tw * tw);
+  // Fixed hairline floor thickens fine strands; the softer tw curve lets medium strands widen sooner.
+  float hairline = sharp * 0.045;
+  float line1Width = sharp * mix(uCausticLineWidth.x, uCausticLineWidth.y, pow(tw, 1.6)) + hairline;
   float line1 = causticLineE3(edges.x, line1Width, tw);
   float tw2 = smoothstep(0.22, 0.88, thickL2);
   float thickB = mix(0.65, 1.25, thickL2);
-  float line2Width = sharp * mix(uCausticLineWidth.x, uCausticLineWidth.y * 0.6, tw2 * tw2) * thickB * 0.85;
+  float line2Width = sharp * mix(uCausticLineWidth.x, uCausticLineWidth.y * 0.6, pow(tw2, 1.6)) * thickB * 0.85
+    + hairline * 0.01;
   float line2 = causticLineE3(edges.y, line2Width, tw2);
   float crossing = line1 * line2;
   // Geometric mean of the two feathered lines: a rounded corona around crossings, peaking on the node.
   float crossBloom = sqrt(max(crossing, 0.0));
   float crossCore = mix(crossing, crossBloom, 0.3);
   float crossW = uCausticCrossGain * mix(0.92, 1.0, smoothstep(0.3, 0.7, macroPulse));
-  float network = line1 * mix(0.7, 0.9, tw) + line2 * uCausticLayer2Gain
-    + crossCore * crossW + pow(crossing, 1.25) * 0.5
-    + crossBloom * mix(0.2, 0.3, macroPulse);
-  float pool = pow(max(network, 0.0), 0.62) * mix(0.1, 0.16, macroPulse);
+  // Nodes flare where both strands are thick, so bright spots stay sparse and varied.
+  float nodeW = mix(0.45, 0.99, smoothstep(0.15, 0.6, tw * tw2));
+  float network = line1 * mix(0.66, 0.98, tw) + line2 * uCausticLayer2Gain
+    + crossCore * crossW + pow(crossing, 1.25) * nodeW
+    + crossBloom * mix(0.22, 0.34, macroPulse);
+  float pool = pow(max(network, 0.0), 0.62) * mix(0.07, 0.12, macroPulse);
   return min(network * pulse * gain + glow + pool, 2.8);
 #endif
 }
