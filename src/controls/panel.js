@@ -92,21 +92,6 @@ export function createControlPanel({
 
           <label class="fluid-ui__axis">
             <span class="fluid-ui__axis-ends">
-              <span>Reflective</span><span>Translucent</span>
-            </span>
-            <input
-              type="range"
-              class="fluid-ui__range"
-              data-key="reflectiveTranslucent"
-              min="0"
-              max="1"
-              step="0.001"
-              aria-label="Reflective to translucent"
-            />
-          </label>
-
-          <label class="fluid-ui__axis">
-            <span class="fluid-ui__axis-ends">
               <span>Low light</span><span>Bright</span>
             </span>
             <input

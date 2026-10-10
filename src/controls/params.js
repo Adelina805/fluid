@@ -460,11 +460,6 @@ export const PUBLIC_DEFAULTS = Object.freeze({
       PARAM_DEFAULTS.motionSpeed,
     ),
   ),
-  /**
-   * 0 = reflective · 1 = translucent
-   * (inverts internal opticalBalance where 1 = reflective)
-   */
-  reflectiveTranslucent: clamp01(1 - PARAM_DEFAULTS.opticalBalance),
   /** 0 = low · 1 = bright */
   light: clamp01(
     inverseLerp(PUBLIC_RANGES.light.min, PUBLIC_RANGES.light.max, PARAM_DEFAULTS.lightIntensity),
@@ -542,10 +537,8 @@ export function deriveCalmRestlessIdle(_calmRestless) {
  * @returns {{ intensity: number, scale: number, sharpness: number, warp: number, speed: number }}
  */
 export function deriveCausticParams(publicControls) {
-  const rt = clamp01(publicControls.reflectiveTranslucent);
   const li = clamp01(publicControls.light);
 
-  const dRt = rt - PUBLIC_DEFAULTS.reflectiveTranslucent;
   const dLi = li - PUBLIC_DEFAULTS.light;
 
   const speed = clamp(CAUSTIC_NET.speed, CAUSTIC_CLAMPS.speed.min, CAUSTIC_CLAMPS.speed.max);
@@ -557,9 +550,9 @@ export function deriveCausticParams(publicControls) {
     CAUSTIC_CLAMPS.sharpness.max,
   );
 
-  // Light = strongest intensity driver; translucent = slight visibility lift.
+  // Light = strongest intensity driver.
   const intensity = clamp(
-    CAUSTIC_NET.intensity + dLi * 0.85 + dRt * 0.12,
+    CAUSTIC_NET.intensity + dLi * 0.85,
     CAUSTIC_CLAMPS.intensity.min,
     CAUSTIC_CLAMPS.intensity.max,
   );
@@ -584,7 +577,6 @@ export function deriveCausticParams(publicControls) {
  */
 export function applyPublicControls(publicControls, params) {
   const cr = clamp01(publicControls.calmRestless);
-  const rt = clamp01(publicControls.reflectiveTranslucent);
   const li = clamp01(publicControls.light);
 
   const { calmRestless: crR, light: liR } = PUBLIC_RANGES;
@@ -612,11 +604,10 @@ export function applyPublicControls(publicControls, params) {
     APPROVED_GLASSY_T,
   );
 
-  // Public 0 = reflective → opticalBalance 1; public 1 = translucent → 0.
-  params.opticalBalance = 1 - rt;
-  params.fresnelStrength = PARAM_DEFAULTS.fresnelStrength + (0.58 - rt) * 0.35;
-  params.colorDepthStrength =
-    PARAM_DEFAULTS.colorDepthStrength + (rt - 0.58) * 0.25;
+  // Reflective ↔ translucent is not public; optics stay at the approved defaults.
+  params.opticalBalance = PARAM_DEFAULTS.opticalBalance;
+  params.fresnelStrength = PARAM_DEFAULTS.fresnelStrength;
+  params.colorDepthStrength = PARAM_DEFAULTS.colorDepthStrength;
 
   params.lightIntensity = lerp(liR.min, liR.max, li);
   params.specularStrength =
