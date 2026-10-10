@@ -243,6 +243,7 @@ export function createSurfaceComposite({
       uLightDir: { value: LIGHT.dir.clone() },
       uLightColor: { value: new Color() },
       uAmbient: { value: new Color() },
+      uLightExposure: { value: 1 },
       uSpecularColor: { value: LIGHT.specularColor.clone() },
       uSpecularStrength: { value: LIGHT.specularStrength },
       uShininess: { value: LIGHT.shininess },

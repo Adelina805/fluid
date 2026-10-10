@@ -10,6 +10,7 @@ uniform float uNoiseColorInfluence;
 uniform vec3 uLightDir;
 uniform vec3 uLightColor;
 uniform vec3 uAmbient;
+uniform float uLightExposure;
 uniform vec3 uSpecularColor;
 uniform float uSpecularStrength;
 uniform float uShininess;
@@ -287,6 +288,8 @@ void main() {
 
   vec3 streakTint = mix(mix(albedo, uSpecularColor, 0.35), vec3(0.88, 0.95, 0.98), brightKnot * 0.3);
   color += streakTint * streak;
+
+  color *= uLightExposure;
 
   // --- Phase 6.5: fine interconnected caustic network (micro layer) ---
   // Kept separate from softCaustics — do not "fix" soft streaks by raising them.

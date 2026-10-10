@@ -253,6 +253,7 @@ export function createWaterMesh() {
       uLightDir: { value: LIGHT.dir.clone() },
       uLightColor: { value: lightColor },
       uAmbient: { value: ambient },
+      uLightExposure: { value: 1 },
       uSpecularColor: { value: LIGHT.specularColor.clone() },
       uSpecularStrength: { value: LIGHT.specularStrength },
       uShininess: { value: LIGHT.shininess },

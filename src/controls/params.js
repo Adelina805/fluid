@@ -60,6 +60,8 @@ export const PARAM_DEFAULTS = Object.freeze({
 
   // LIGHT
   lightIntensity: LIGHT.intensity,
+  /** Secondary Low light ↔ Bright exposure (1 = approved default; diffuse only). */
+  lightExposure: 1,
   specularStrength: LIGHT.specularStrength,
   specularNarrowStrength: LIGHT.specularNarrowStrength,
   shininess: LIGHT.shininess,
@@ -334,6 +336,7 @@ export function applyShadingParams(u, params) {
 
   _light.copy(LIGHT.color).multiplyScalar(params.lightIntensity);
   _ambient.copy(LIGHT.ambient).multiplyScalar(LIGHT.ambientStrength);
+  if (u.uLightExposure) u.uLightExposure.value = params.lightExposure ?? 1;
   u.uLightColor.value.copy(_light);
   u.uAmbient.value.copy(_ambient);
   // Highlight size is hard to see under a top-down lobe. Expand the exponent
@@ -536,6 +539,21 @@ export function deriveCalmRestlessIdle(_calmRestless) {
  * @param {ReturnType<typeof createPublicControls>} publicControls
  * @returns {{ intensity: number, scale: number, sharpness: number, warp: number, speed: number }}
  */
+/**
+ * Gentle overall exposure for Low light ↔ Bright (weaker than caustic / specular rel maps).
+ * Piecewise linear: 0.85× at low, 1× at public default (~0.414), 1.08× at bright.
+ *
+ * @param {number} light 0–1 public light axis
+ */
+export function deriveLightExposure(light) {
+  const li = clamp01(light);
+  const t0 = PUBLIC_DEFAULTS.light;
+  const lo = 0.85;
+  const hi = 1.08;
+  if (li <= t0) return lerp(lo, 1, t0 > 1e-8 ? li / t0 : 1);
+  return lerp(1, hi, 1 - t0 > 1e-8 ? (li - t0) / (1 - t0) : 1);
+}
+
 export function deriveCausticParams(publicControls) {
   const li = clamp01(publicControls.light);
 
@@ -609,8 +627,9 @@ export function applyPublicControls(publicControls, params) {
   params.fresnelStrength = PARAM_DEFAULTS.fresnelStrength;
   params.colorDepthStrength = PARAM_DEFAULTS.colorDepthStrength;
 
-  // Approved diffuse baseline — light slider does not scale the whole frame.
+  // Approved diffuse baseline — primary light slider moves caustics / spec, not uLight intensity.
   params.lightIntensity = PARAM_DEFAULTS.lightIntensity;
+  params.lightExposure = deriveLightExposure(li);
   params.specularStrength =
     PARAM_DEFAULTS.specularStrength * rel(li, li0, 0.58, 1.45);
   params.causticSoftStrength =
