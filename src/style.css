@@ -69,27 +69,39 @@ body {
 
 .fluid-ui__toggle {
   position: absolute;
-  top: max(0.85rem, env(safe-area-inset-top, 0px) + 0.55rem);
+  bottom: max(0.85rem, env(safe-area-inset-bottom, 0px) + 0.55rem);
   right: max(0.85rem, env(safe-area-inset-right, 0px) + 0.55rem);
   width: 2.25rem;
   height: 2.25rem;
   margin: 0;
   padding: 0;
-  border: 1px solid var(--fluid-ui-border);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: var(--fluid-ui-radius);
-  background: var(--fluid-ui-surface);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  color: var(--fluid-ui-ink);
+  background: rgba(248, 248, 246, 0.16);
+  color: #fff;
   cursor: pointer;
   display: grid;
   place-items: center;
-  transition: background 160ms ease, border-color 160ms ease;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    backdrop-filter 160ms ease,
+    color 160ms ease,
+    opacity 120ms ease;
 }
 
-.fluid-ui__toggle:hover {
+.fluid-ui__toggle[aria-expanded="true"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fluid-ui__toggle:hover,
+.fluid-ui__toggle:focus-visible {
   background: var(--fluid-ui-surface-hover);
   border-color: var(--fluid-ui-border-strong);
+  color: var(--fluid-ui-ink);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .fluid-ui__toggle:focus-visible,
@@ -101,31 +113,27 @@ body {
   outline-offset: 2px;
 }
 
-.fluid-ui__toggle-mark {
-  width: 0.75rem;
-  height: 1px;
-  background: currentColor;
-  box-shadow:
-    0 -4px 0 currentColor,
-    0 4px 0 currentColor;
-  opacity: 0.85;
+.fluid-ui__toggle-icon {
+  display: block;
+  width: 1rem;
+  height: 1rem;
 }
 
 .fluid-ui__panel {
   position: absolute;
-  top: max(3.5rem, env(safe-area-inset-top, 0px) + 3.2rem);
+  bottom: max(0.85rem, env(safe-area-inset-bottom, 0px) + 0.55rem);
   right: max(0.85rem, env(safe-area-inset-right, 0px) + 0.55rem);
   width: min(15rem, calc(100vw - 1.25rem));
   max-height: min(70vh, 28rem);
   opacity: 0;
-  transform: translateY(-0.25rem);
-  transform-origin: top right;
+  transform: scale(0.92);
+  transform-origin: bottom right;
   transition: opacity 160ms ease, transform 160ms ease;
 }
 
 .fluid-ui__panel.is-visible {
   opacity: 1;
-  transform: translateY(0);
+  transform: scale(1);
 }
 
 .fluid-ui__panel-inner {
@@ -357,7 +365,6 @@ body {
   }
 
   .fluid-ui__panel {
-    top: max(3.75rem, env(safe-area-inset-top, 0px) + 3.45rem);
     width: min(16rem, calc(100vw - 1.4rem));
     max-height: min(62vh, 26rem);
   }

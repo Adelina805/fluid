@@ -7,7 +7,8 @@ import {
 
 /**
  * Phase 6 Stage B — minimal public control panel.
- * Collapsed by default. Opens via corner icon or `C`. Escape or tapping outside closes.
+ * Collapsed by default. Opens via bottom-right icon or `C`, expanding over the icon.
+ * Escape or tapping outside closes.
  * No persistence. Settings reset every page load.
  *
  * @param {object} options
@@ -33,7 +34,28 @@ export function createControlPanel({
       aria-expanded="false"
       aria-controls="fluid-controls-panel"
     >
-      <span class="fluid-ui__toggle-mark" aria-hidden="true"></span>
+      <svg
+        class="fluid-ui__toggle-icon"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <path d="M10 5H3" />
+        <path d="M12 19H3" />
+        <path d="M14 3v4" />
+        <path d="M16 17v4" />
+        <path d="M21 12h-9" />
+        <path d="M21 19h-5" />
+        <path d="M21 5h-7" />
+        <path d="M8 10v4" />
+        <path d="M8 12H3" />
+      </svg>
     </button>
     <div
       id="fluid-controls-panel"
@@ -164,8 +186,11 @@ export function createControlPanel({
     panel.classList.toggle('is-open', open);
     panel.setAttribute('aria-hidden', open ? 'false' : 'true');
     panel.inert = !open;
+    // The panel covers the toggle while open, so keep it out of the tab order.
+    toggle.tabIndex = open ? -1 : 0;
     if (open) {
       panel.hidden = false;
+      if (document.activeElement === toggle) closeBtn.focus();
       // Allow CSS transition to run after un-hiding.
       requestAnimationFrame(() => {
         panel.classList.add('is-visible');
