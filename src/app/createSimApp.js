@@ -65,12 +65,32 @@ function idleTargetsFromSlider(calmRestless, baseDriftSpeed) {
 }
 
 /**
+ * @param {HTMLElement | null | undefined} placeholder
+ */
+function removePlaceholder(placeholder) {
+  if (!placeholder?.isConnected) return;
+  placeholder.remove();
+}
+
+/**
  * Production Fluid app (E3.5–E6 approved stack): persistent sim + rebuilt caustics on `/`.
  * Legacy analytic surface remains at `?legacy`; dev harness at `?sim`.
  *
  * @param {HTMLElement} root
+ * @param {{ placeholder?: HTMLElement | null }} [options]
  */
-export function createSimApp(root) {
+export function createSimApp(root, options = {}) {
+  const placeholder = options.placeholder ?? null;
+
+  const failGracefully = (message, error) => {
+    console.error(message, error ?? '');
+    return {
+      dispose() {
+        removePlaceholder(placeholder);
+      },
+    };
+  };
+
   const params = createParams();
   const publicControls = createPublicControls();
 
@@ -90,26 +110,28 @@ export function createSimApp(root) {
   const camera = createTopDownCamera();
   const scene = new Scene();
   scene.background = new Color(COLOR_DEEP.getHex());
-  const renderer = new WebGLRenderer({
-    antialias: false,
-    alpha: false,
-    powerPreference: 'high-performance',
-  });
+
+  let renderer;
+  try {
+    renderer = new WebGLRenderer({
+      antialias: false,
+      alpha: false,
+      powerPreference: 'high-performance',
+    });
+  } catch (error) {
+    return failGracefully('[fluid] WebGL is not available on this device. Showing the static placeholder.', error);
+  }
+
   renderer.setClearColor(COLOR_DEEP.getHex(), 1);
   root.appendChild(renderer.domElement);
 
   if (!supportsSimTargets(renderer)) {
     console.error(
-      '[fluid] Half-float render targets are not supported on this device. Showing a static background.',
+      '[fluid] Half-float render targets are not supported on this device. Showing the static placeholder.',
     );
-    bindResize(renderer, camera, () => renderer.render(scene, camera));
-    return {
-      renderer,
-      dispose: () => {
-        renderer.dispose();
-        if (renderer.domElement.parentElement === root) root.removeChild(renderer.domElement);
-      },
-    };
+    renderer.dispose();
+    if (renderer.domElement.parentElement === root) root.removeChild(renderer.domElement);
+    return failGracefully('[fluid] Simulation is not supported on this device.');
   }
 
   const sim = createWaterSim(renderer, { idleSource: true });
@@ -180,10 +202,20 @@ export function createSimApp(root) {
   let warmupFrameId = 0;
   let ambientWarmupComplete = false;
 
+  const paintSettledFrame = () => {
+    viewUniforms.uState.value = sim.getTexture();
+    if (viewUniforms.uTime) viewUniforms.uTime.value = elapsed;
+    viewMesh.userData.prepare?.(renderer, sim.getTexture());
+    renderer.render(scene, camera);
+  };
+
   const finishAmbientWarmup = () => {
     ambientWarmupComplete = true;
-    renderer.domElement.style.visibility = '';
-    loop.start();
+    lastFrameTime = performance.now();
+    running = true;
+    paintSettledFrame();
+    removePlaceholder(placeholder);
+    frameId = requestAnimationFrame(renderFrame);
   };
 
   const runAmbientWarmupFrame = () => {
@@ -209,7 +241,6 @@ export function createSimApp(root) {
     pushIdleToSim();
 
     warmupStepsRemaining = Math.round(SIM_STEP_HZ * WARMUP_SIM_SECONDS);
-    renderer.domElement.style.visibility = 'hidden';
     warmupFrameId = requestAnimationFrame(runAmbientWarmupFrame);
   };
 
@@ -321,6 +352,7 @@ export function createSimApp(root) {
       if (renderer.domElement.parentElement === root) {
         root.removeChild(renderer.domElement);
       }
+      removePlaceholder(placeholder);
     },
   };
 }
