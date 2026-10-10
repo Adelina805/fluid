@@ -436,10 +436,10 @@ function clamp01(t) {
 const APPROVED_OPTICS_RANGE = Object.freeze({
   turbMin: 0.35,
   turbMax: 5,
-  distortMin: 0.12,
+  distortMin: 0.01,
   distortMax: 1.35,
-  narrowMin: 0.2,
-  narrowMax: 0.48,
+  narrowMin: 0.1,
+  narrowMax: 0.99,
 });
 
 const APPROVED_GLASSY_T = clamp01(
@@ -483,31 +483,60 @@ export function createPublicControls() {
 }
 
 /**
- * Sim idle + caustic drift multipliers from calm↔restless (1 at public default).
- * Primary: idle strength; secondary: idle temporal rate; subtle: drift speed.
- *
- * @param {number} calmRestless 0–1
+ * Mode B caustic warp drift speed from calm↔restless (matches approved 0.06 / s at public default).
+ * Piecewise linear: calm → default → restless so 0 / cr0 / 1 land on the target speeds.
  */
-export function deriveRestlessSimCoupling(calmRestless) {
+export const CALM_RESTLESS_DRIFT_SPEED = Object.freeze({
+  calm: 0.02,
+  /** ~4× approved default; upper slider segment uses ease-in so motion ramps into restless. */
+  restless: 0.26,
+});
+
+/**
+ * @param {number} calmRestless 0–1
+ * @param {number} [defaultSpeed] Approved baseline drift (CAUSTIC_COUPLING warp default).
+ */
+export function deriveCalmRestlessCausticDriftSpeed(calmRestless, defaultSpeed = 0.06) {
   const cr = clamp01(calmRestless);
   const cr0 = PUBLIC_DEFAULTS.calmRestless;
-  /** @param {number} lo @param {number} hi equals 1 at cr0 */
-  const rel = (lo, hi) => lerp(lo, hi, cr) / lerp(lo, hi, cr0);
+  const { calm, restless } = CALM_RESTLESS_DRIFT_SPEED;
+  if (cr <= cr0) {
+    const t = cr0 > 1e-8 ? cr / cr0 : 0;
+    return lerp(calm, defaultSpeed, t);
+  }
+  const t = 1 - cr0 > 1e-8 ? (cr - cr0) / (1 - cr0) : 1;
+  const u = t * t;
+  return lerp(defaultSpeed, restless, u);
+}
+
+/**
+ * Multiplier on `CAUSTIC_COUPLING.driftSpeed.warp` (1 at public default).
+ *
+ * @param {number} calmRestless 0–1
+ * @param {number} [baseSpeed]
+ */
+export function deriveCalmRestlessCausticDriftMul(calmRestless, baseSpeed = 0.06) {
+  return deriveCalmRestlessCausticDriftSpeed(calmRestless, baseSpeed) / baseSpeed;
+}
+
+/**
+ * Sim idle coupling from calm↔restless — held at approved E3.5 defaults (motion is caustic drift).
+ *
+ * @param {number} _calmRestless 0–1 (reserved for future subtle idle trim)
+ */
+export function deriveCalmRestlessIdle(_calmRestless) {
   return {
-    strengthMul: rel(0.32, 1.55),
-    /** Narrow swing — strength carries most of the calm↔restless separation. */
-    mixMul: rel(0.88, 1.02),
-    speedMul: rel(0.72, 1.18),
-    driftMul: rel(0.82, 1.08),
-    /** Calm hits headroom sooner; restless keeps more sustained idle injection. */
-    heightCapMul: rel(0.78, 1.14),
+    strengthMul: 1,
+    mixMul: 1,
+    speedMul: 1,
+    heightCapMul: 1,
   };
 }
 
 /**
  * Derive fine-caustic params from public semantic axes around the approved baseline.
  * At public defaults every returned value equals CAUSTIC_NET exactly.
- * Calm↔restless does not move warp/speed (sim-driven motion handles that).
+ * Calm↔restless does not move warp/speed (Mode B drift is driven in createSimApp).
  *
  * @param {ReturnType<typeof createPublicControls>} publicControls
  * @returns {{ intensity: number, scale: number, sharpness: number, warp: number, speed: number }}

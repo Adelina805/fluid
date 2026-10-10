@@ -9,7 +9,8 @@ import {
   applyPublicControls,
   createParams,
   createPublicControls,
-  deriveRestlessSimCoupling,
+  deriveCalmRestlessCausticDriftMul,
+  deriveCalmRestlessIdle,
 } from '../controls/params.js';
 import { createControlPanel } from '../controls/panel.js';
 import {
@@ -47,15 +48,19 @@ const WARMUP_FRAME_BUDGET_MS = 10;
 /**
  * @param {number} calmRestless
  */
-function idleTargetsFromSlider(calmRestless) {
-  const restless = deriveRestlessSimCoupling(calmRestless);
+/**
+ * @param {number} calmRestless
+ * @param {number} baseDriftSpeed CAUSTIC_COUPLING warp default
+ */
+function idleTargetsFromSlider(calmRestless, baseDriftSpeed) {
+  const idleMul = deriveCalmRestlessIdle(calmRestless);
   const idle = IDLE_DEFAULTS;
   return {
-    strength: idle.strength * restless.strengthMul,
-    mix: idle.mix * restless.mixMul,
-    speed: idle.speed * restless.speedMul,
-    heightCap: idle.heightCap * restless.heightCapMul,
-    driftMul: restless.driftMul,
+    strength: idle.strength * idleMul.strengthMul,
+    mix: idle.mix * idleMul.mixMul,
+    speed: idle.speed * idleMul.speedMul,
+    heightCap: idle.heightCap * idleMul.heightCapMul,
+    driftMul: deriveCalmRestlessCausticDriftMul(calmRestless, baseDriftSpeed),
   };
 }
 
@@ -126,7 +131,7 @@ export function createSimApp(root) {
   const viewUniforms = viewMesh.material.uniforms;
   const baseCausticDriftSpeed = CAUSTIC_COUPLING.driftSpeed[CAUSTIC_COUPLING.drift];
 
-  let idleTarget = idleTargetsFromSlider(publicControls.calmRestless);
+  let idleTarget = idleTargetsFromSlider(publicControls.calmRestless, baseCausticDriftSpeed);
   let causticDriftTarget = baseCausticDriftSpeed * idleTarget.driftMul * motionScale;
   const idleLive = {
     strength: idleTarget.strength,
@@ -153,7 +158,7 @@ export function createSimApp(root) {
 
   const syncParams = () => {
     applyPublicControls(publicControls, params);
-    idleTarget = idleTargetsFromSlider(publicControls.calmRestless);
+    idleTarget = idleTargetsFromSlider(publicControls.calmRestless, baseCausticDriftSpeed);
     causticDriftTarget = baseCausticDriftSpeed * idleTarget.driftMul * motionScale;
     viewMesh.userData.syncShadingParams(params);
     scene.background.copy(viewUniforms.uColorDeep.value);
