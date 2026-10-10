@@ -7,7 +7,7 @@ import {
 
 /**
  * Phase 6 Stage B — minimal public control panel.
- * Collapsed by default. Opens via corner icon or `C`. Escape closes.
+ * Collapsed by default. Opens via corner icon or `C`. Escape or tapping outside closes.
  * No persistence. Settings reset every page load.
  *
  * @param {object} options
@@ -266,6 +266,12 @@ export function createControlPanel({
     }
   }
 
+  function onOutsidePointerDown(event) {
+    if (!open) return;
+    if (ui.contains(event.target)) return;
+    setOpen(false);
+  }
+
   function engageUi(event) {
     event.stopPropagation();
     uiPointerDown = true;
@@ -298,6 +304,8 @@ export function createControlPanel({
   hexInput.addEventListener('input', onHexInput);
   hexInput.addEventListener('blur', onHexBlur);
   window.addEventListener('keydown', onKeyDown);
+  // Capture phase so canvas pointer handlers can't swallow the event first.
+  window.addEventListener('pointerdown', onOutsidePointerDown, true);
 
   ui.addEventListener('pointerdown', engageUi);
   ui.addEventListener('pointerenter', onUiEnter);
@@ -321,6 +329,7 @@ export function createControlPanel({
     dispose() {
       setUiEngage(false);
       window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('pointerdown', onOutsidePointerDown, true);
       window.removeEventListener('pointerup', releaseUi);
       window.removeEventListener('pointercancel', releaseUi);
       ui.remove();

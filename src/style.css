@@ -36,20 +36,30 @@ body {
 /* ------------------------------------------------------------------ */
 
 .fluid-ui {
-  --fluid-ui-font: "Outfit", "Avenir Next", "Segoe UI", sans-serif;
-  --fluid-ui-ink: rgba(244, 250, 252, 0.92);
-  --fluid-ui-ink-soft: rgba(220, 236, 242, 0.62);
-  --fluid-ui-glass: rgba(12, 28, 36, 0.42);
-  --fluid-ui-glass-border: rgba(255, 255, 255, 0.14);
-  --fluid-ui-focus: rgba(180, 230, 245, 0.95);
-  --fluid-ui-track: rgba(255, 255, 255, 0.16);
-  --fluid-ui-thumb: rgba(236, 248, 252, 0.92);
+  --fluid-ui-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --fluid-ui-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+  --fluid-ui-ink: rgba(24, 26, 28, 0.92);
+  --fluid-ui-ink-soft: rgba(24, 26, 28, 0.56);
+  --fluid-ui-surface: rgba(248, 248, 246, 0.82);
+  --fluid-ui-surface-hover: rgba(252, 252, 250, 0.92);
+  --fluid-ui-border: rgba(0, 0, 0, 0.08);
+  --fluid-ui-border-strong: rgba(0, 0, 0, 0.16);
+  --fluid-ui-field: rgba(255, 255, 255, 0.6);
+  --fluid-ui-hover: rgba(0, 0, 0, 0.05);
+  --fluid-ui-focus: rgba(24, 26, 28, 0.75);
+  --fluid-ui-track: rgba(0, 0, 0, 0.14);
+  --fluid-ui-thumb: rgba(28, 30, 32, 0.92);
+  --fluid-ui-invalid: rgba(190, 90, 60, 0.75);
+  --fluid-ui-radius: 6px;
+  --fluid-ui-radius-sm: 4px;
 
   position: fixed;
   inset: 0;
   z-index: 20;
   pointer-events: none;
   font-family: var(--fluid-ui-font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .fluid-ui__toggle,
@@ -61,25 +71,25 @@ body {
   position: absolute;
   top: max(0.85rem, env(safe-area-inset-top, 0px) + 0.55rem);
   right: max(0.85rem, env(safe-area-inset-right, 0px) + 0.55rem);
-  width: 2.75rem;
-  height: 2.75rem;
+  width: 2.25rem;
+  height: 2.25rem;
   margin: 0;
   padding: 0;
-  border: 1px solid var(--fluid-ui-glass-border);
-  border-radius: 999px;
-  background: var(--fluid-ui-glass);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--fluid-ui-border);
+  border-radius: var(--fluid-ui-radius);
+  background: var(--fluid-ui-surface);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   color: var(--fluid-ui-ink);
   cursor: pointer;
   display: grid;
   place-items: center;
-  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  transition: background 160ms ease, border-color 160ms ease;
 }
 
 .fluid-ui__toggle:hover {
-  background: rgba(12, 28, 36, 0.55);
-  border-color: rgba(255, 255, 255, 0.22);
+  background: var(--fluid-ui-surface-hover);
+  border-color: var(--fluid-ui-border-strong);
 }
 
 .fluid-ui__toggle:focus-visible,
@@ -92,45 +102,42 @@ body {
 }
 
 .fluid-ui__toggle-mark {
-  width: 1rem;
-  height: 1rem;
-  border-radius: 50%;
-  border: 1.5px solid rgba(236, 248, 252, 0.85);
-  box-shadow: inset 0 0 0 3px rgba(236, 248, 252, 0.18);
-  background: radial-gradient(
-    circle at 35% 30%,
-    rgba(255, 255, 255, 0.55),
-    rgba(120, 190, 210, 0.15) 55%,
-    transparent 70%
-  );
+  width: 0.75rem;
+  height: 1px;
+  background: currentColor;
+  box-shadow:
+    0 -4px 0 currentColor,
+    0 4px 0 currentColor;
+  opacity: 0.85;
 }
 
 .fluid-ui__panel {
   position: absolute;
-  top: max(4.1rem, env(safe-area-inset-top, 0px) + 3.7rem);
+  top: max(3.5rem, env(safe-area-inset-top, 0px) + 3.2rem);
   right: max(0.85rem, env(safe-area-inset-right, 0px) + 0.55rem);
-  width: min(17.5rem, calc(100vw - 1.7rem));
+  width: min(15rem, calc(100vw - 1.25rem));
   max-height: min(70vh, 28rem);
   opacity: 0;
-  transform: translateY(-0.35rem) scale(0.98);
+  transform: translateY(-0.25rem);
   transform-origin: top right;
   transition: opacity 160ms ease, transform 160ms ease;
 }
 
 .fluid-ui__panel.is-visible {
   opacity: 1;
-  transform: translateY(0) scale(1);
+  transform: translateY(0);
 }
 
 .fluid-ui__panel-inner {
-  padding: 0.85rem 0.95rem 1rem;
-  border: 1px solid var(--fluid-ui-glass-border);
-  border-radius: 1rem;
-  background: var(--fluid-ui-glass);
-  backdrop-filter: blur(18px) saturate(1.15);
-  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  max-height: inherit;
+  padding: 0.65rem 0.7rem 0.75rem;
+  border: 1px solid var(--fluid-ui-border);
+  border-radius: var(--fluid-ui-radius);
+  background: var(--fluid-ui-surface);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   color: var(--fluid-ui-ink);
-  box-shadow: 0 12px 40px rgba(0, 10, 18, 0.28);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
   overflow: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -140,62 +147,68 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  margin-bottom: 0.85rem;
+  margin: 0 0 0.6rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--fluid-ui-border);
 }
 
 .fluid-ui__title {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 0.8125rem;
   font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--fluid-ui-ink-soft);
+  line-height: 1.2;
+  color: var(--fluid-ui-ink);
 }
 
 .fluid-ui__close {
-  width: 2rem;
-  height: 2rem;
-  margin: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin: -0.25rem -0.25rem -0.25rem 0;
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--fluid-ui-radius-sm);
   background: transparent;
-  color: var(--fluid-ui-ink);
-  font-size: 1.35rem;
+  color: var(--fluid-ui-ink-soft);
+  font-size: 1rem;
   line-height: 1;
   cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .fluid-ui__close:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--fluid-ui-hover);
+  color: var(--fluid-ui-ink);
 }
 
 .fluid-ui__fields {
   display: flex;
   flex-direction: column;
-  gap: 0.95rem;
+  gap: 0.65rem;
 }
 
 .fluid-ui__axis {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.25rem;
+}
+
+.fluid-ui__axis-ends,
+.fluid-ui__color-label {
+  font-size: 0.6875rem;
+  line-height: 1.3;
+  color: var(--fluid-ui-ink-soft);
 }
 
 .fluid-ui__axis-ends {
   display: flex;
   justify-content: space-between;
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--fluid-ui-ink-soft);
 }
 
 .fluid-ui__range {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 1.5rem;
+  height: 1.125rem;
   margin: 0;
   background: transparent;
   cursor: pointer;
@@ -203,114 +216,158 @@ body {
 }
 
 .fluid-ui__range::-webkit-slider-runnable-track {
-  height: 0.2rem;
-  border-radius: 999px;
+  height: 0.125rem;
+  border-radius: 1px;
   background: var(--fluid-ui-track);
 }
 
 .fluid-ui__range::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 1rem;
-  height: 1rem;
-  margin-top: -0.4rem;
+  width: 0.625rem;
+  height: 0.625rem;
+  margin-top: -0.25rem;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  border: 0;
   background: var(--fluid-ui-thumb);
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
 }
 
 .fluid-ui__range::-moz-range-track {
-  height: 0.2rem;
-  border-radius: 999px;
+  height: 0.125rem;
+  border-radius: 1px;
   background: var(--fluid-ui-track);
 }
 
 .fluid-ui__range::-moz-range-thumb {
-  width: 1rem;
-  height: 1rem;
+  width: 0.625rem;
+  height: 0.625rem;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  border: 0;
   background: var(--fluid-ui-thumb);
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
 }
 
 .fluid-ui__color {
   display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.fluid-ui__color-label {
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--fluid-ui-ink-soft);
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.15rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--fluid-ui-border);
 }
 
 .fluid-ui__color-row {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.375rem;
 }
 
 .fluid-ui__swatch {
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 1.375rem;
+  height: 1.375rem;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 0.55rem;
+  border: 1px solid var(--fluid-ui-border-strong);
+  border-radius: var(--fluid-ui-radius-sm);
   background: transparent;
   cursor: pointer;
   flex: 0 0 auto;
 }
 
 .fluid-ui__swatch::-webkit-color-swatch-wrapper {
-  padding: 0.15rem;
+  padding: 0.125rem;
 }
 
 .fluid-ui__swatch::-webkit-color-swatch {
   border: 0;
-  border-radius: 0.35rem;
+  border-radius: 2px;
+}
+
+.fluid-ui__swatch::-moz-color-swatch {
+  border: 0;
+  border-radius: 2px;
 }
 
 .fluid-ui__hex {
-  flex: 1 1 auto;
+  width: 5.25rem;
   min-width: 0;
-  height: 2.25rem;
-  padding: 0 0.7rem;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 0.55rem;
-  background: rgba(255, 255, 255, 0.06);
+  height: 1.5rem;
+  padding: 0 0.45rem;
+  border: 1px solid var(--fluid-ui-border);
+  border-radius: var(--fluid-ui-radius-sm);
+  background: var(--fluid-ui-field);
   color: var(--fluid-ui-ink);
   font: inherit;
-  font-size: 0.9rem;
-  letter-spacing: 0.04em;
+  font-family: var(--fluid-ui-mono);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  transition: border-color 120ms ease;
+}
+
+.fluid-ui__hex:hover {
+  border-color: var(--fluid-ui-border-strong);
 }
 
 .fluid-ui__hex.is-invalid {
-  border-color: rgba(255, 170, 150, 0.65);
+  border-color: var(--fluid-ui-invalid);
 }
 
 .fluid-ui__hex::placeholder {
-  color: rgba(220, 236, 242, 0.35);
+  color: rgba(24, 26, 28, 0.35);
+}
+
+@media (pointer: coarse) {
+  .fluid-ui__range {
+    height: 1.75rem;
+  }
+
+  .fluid-ui__range::-webkit-slider-thumb {
+    width: 0.875rem;
+    height: 0.875rem;
+    margin-top: -0.375rem;
+  }
+
+  .fluid-ui__range::-moz-range-thumb {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  .fluid-ui__close {
+    width: 2rem;
+    height: 2rem;
+    margin: -0.5rem -0.5rem -0.5rem 0;
+  }
+
+  .fluid-ui__swatch {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+
+  /* 16px prevents iOS Safari from zooming on focus. */
+  .fluid-ui__hex {
+    width: 6.25rem;
+    height: 1.75rem;
+    font-size: 16px;
+  }
 }
 
 @media (max-width: 480px) {
-  .fluid-ui__panel {
-    width: min(18.5rem, calc(100vw - 1.4rem));
-    max-height: min(62vh, 26rem);
+  .fluid-ui__toggle {
+    width: 2.5rem;
+    height: 2.5rem;
   }
 
-  .fluid-ui__toggle {
-    width: 3rem;
-    height: 3rem;
+  .fluid-ui__panel {
+    top: max(3.75rem, env(safe-area-inset-top, 0px) + 3.45rem);
+    width: min(16rem, calc(100vw - 1.4rem));
+    max-height: min(62vh, 26rem);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .fluid-ui__toggle,
-  .fluid-ui__panel {
+  .fluid-ui__panel,
+  .fluid-ui__close,
+  .fluid-ui__hex {
     transition: none;
   }
 }
