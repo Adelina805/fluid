@@ -16,7 +16,7 @@ import {
 } from '../render/createWaterMesh.js';
 
 /**
- * Relative HSL offsets from the Phase 3–5 deep anchor (#2a7a9c)
+ * Relative HSL offsets from the Phase 3–5 deep anchor (#289bb4)
  * that reproduce the approved mid / shallow stops at warmCool = 0.
  */
 const MID_OFFSET = {
@@ -74,7 +74,7 @@ export const PARAM_DEFAULTS = Object.freeze({
   causticNetSpeed: CAUSTIC_NET.speed,
 
   // COLOR
-  baseHex: '#2a7a9c',
+  baseHex: '#289bb4',
   warmCool: 0,
   /** Internal triad separation — not exposed in Stage A (felt inert). */
   depthMix: 1,

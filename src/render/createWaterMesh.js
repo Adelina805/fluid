@@ -3,7 +3,7 @@ import vertexShader from '../shaders/water.vert.glsl?raw';
 import fragmentShader from '../shaders/water.frag.glsl?raw';
 
 /** Cool deep blue — depth without near-navy troughs. */
-export const COLOR_DEEP = new Color(0x2a7a9c);
+export const COLOR_DEEP = new Color(0x289bb4);
 
 /** Mid cerulean — bridges troughs and crests. */
 export const COLOR_MID = new Color(0x3f9bb8);
