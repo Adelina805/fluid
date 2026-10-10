@@ -15,6 +15,7 @@ import { createControlPanel } from '../controls/panel.js';
 import {
   IDLE_DEFAULTS,
   IDLE_REDUCED_MOTION_SCALE,
+  advanceIdleTime,
 } from '../sim/idleSource.js';
 import {
   MAX_STEPS_PER_FRAME,
@@ -32,6 +33,31 @@ const MAX_FRAME_DT = 0.1;
 
 /** Resize settle time before the sim grid is rebuilt (ms). */
 const RESIZE_DEBOUNCE_MS = 150;
+
+/** E-folding time for calm↔restless idle retargeting (seconds). */
+const IDLE_TARGET_SMOOTH_TAU = 0.5;
+
+/**
+ * Hidden pre-roll: ~one idle beat of sim steps, spread across rAF with a per-frame GPU budget
+ * (avoids a single long synchronous hitch on mobile).
+ */
+const WARMUP_SIM_SECONDS = 12;
+const WARMUP_FRAME_BUDGET_MS = 10;
+
+/**
+ * @param {number} calmRestless
+ */
+function idleTargetsFromSlider(calmRestless) {
+  const restless = deriveRestlessSimCoupling(calmRestless);
+  const idle = IDLE_DEFAULTS;
+  return {
+    strength: idle.strength * restless.strengthMul,
+    mix: idle.mix * restless.mixMul,
+    speed: idle.speed * restless.speedMul,
+    heightCap: idle.heightCap * restless.heightCapMul,
+    driftMul: restless.driftMul,
+  };
+}
 
 /**
  * Production Fluid app (E3.5–E6 approved stack): persistent sim + rebuilt caustics on `/`.
@@ -82,7 +108,7 @@ export function createSimApp(root) {
   }
 
   const sim = createWaterSim(renderer, { idleSource: true });
-  sim.applyIdle({}, motionScale);
+  const idleTimeUniform = sim.getStepMaterial().uniforms.uIdleTime;
 
   const viewMesh = createSurfaceComposite({
     padding: SIM_EDGE_PADDING,
@@ -99,27 +125,42 @@ export function createSimApp(root) {
 
   const viewUniforms = viewMesh.material.uniforms;
   const baseCausticDriftSpeed = CAUSTIC_COUPLING.driftSpeed[CAUSTIC_COUPLING.drift];
-  const syncParams = () => {
-    applyPublicControls(publicControls, params);
-    const restless = deriveRestlessSimCoupling(publicControls.calmRestless);
-    const idle = IDLE_DEFAULTS;
+
+  let idleTarget = idleTargetsFromSlider(publicControls.calmRestless);
+  let causticDriftTarget = baseCausticDriftSpeed * idleTarget.driftMul * motionScale;
+  const idleLive = {
+    strength: idleTarget.strength,
+    mix: idleTarget.mix,
+    speed: idleTarget.speed,
+    heightCap: idleTarget.heightCap,
+  };
+  let causticDriftLive = causticDriftTarget;
+
+  const pushIdleToSim = () => {
     sim.applyIdle(
       {
-        strength: idle.strength * restless.strengthMul,
-        mix: idle.mix * restless.mixMul,
-        speed: idle.speed * restless.speedMul,
+        strength: idleLive.strength,
+        mix: idleLive.mix,
+        speed: idleLive.speed,
+        heightCap: idleLive.heightCap,
       },
       motionScale,
     );
     if (viewUniforms.uCausticDriftSpeed) {
-      viewUniforms.uCausticDriftSpeed.value =
-        baseCausticDriftSpeed * restless.driftMul * motionScale;
+      viewUniforms.uCausticDriftSpeed.value = causticDriftLive;
     }
+  };
+
+  const syncParams = () => {
+    applyPublicControls(publicControls, params);
+    idleTarget = idleTargetsFromSlider(publicControls.calmRestless);
+    causticDriftTarget = baseCausticDriftSpeed * idleTarget.driftMul * motionScale;
     viewMesh.userData.syncShadingParams(params);
     scene.background.copy(viewUniforms.uColorDeep.value);
     renderer.setClearColor(viewUniforms.uColorDeep.value, 1);
   };
   syncParams();
+  pushIdleToSim();
 
   const pointer = createSimPointer({ canvas: renderer.domElement, sim });
 
@@ -129,6 +170,43 @@ export function createSimApp(root) {
     viewUniforms.uGridSize.value.set(width, height);
   };
 
+  let warmupStepsRemaining = 0;
+  let warmupFrameId = 0;
+  let ambientWarmupComplete = false;
+
+  const finishAmbientWarmup = () => {
+    ambientWarmupComplete = true;
+    renderer.domElement.style.visibility = '';
+    loop.start();
+  };
+
+  const runAmbientWarmupFrame = () => {
+    const frameStart = performance.now();
+    while (warmupStepsRemaining > 0 && performance.now() - frameStart < WARMUP_FRAME_BUDGET_MS) {
+      sim.advance(1);
+      warmupStepsRemaining -= 1;
+    }
+    if (warmupStepsRemaining > 0) {
+      warmupFrameId = requestAnimationFrame(runAmbientWarmupFrame);
+      return;
+    }
+    finishAmbientWarmup();
+  };
+
+  const beginAmbientWarmup = () => {
+    advanceIdleTime(idleTimeUniform, Math.round(SIM_STEP_HZ * WARMUP_SIM_SECONDS), SIM_STEP_HZ);
+    idleLive.strength = idleTarget.strength;
+    idleLive.mix = idleTarget.mix;
+    idleLive.speed = idleTarget.speed;
+    idleLive.heightCap = idleTarget.heightCap;
+    causticDriftLive = causticDriftTarget;
+    pushIdleToSim();
+
+    warmupStepsRemaining = Math.round(SIM_STEP_HZ * WARMUP_SIM_SECONDS);
+    renderer.domElement.style.visibility = 'hidden';
+    warmupFrameId = requestAnimationFrame(runAmbientWarmupFrame);
+  };
+
   let resizeTimer = 0;
   let initialized = false;
   const unbindResize = bindResize(renderer, camera, () => {
@@ -136,6 +214,7 @@ export function createSimApp(root) {
     if (!initialized) {
       initialized = true;
       rebuildSim();
+      beginAmbientWarmup();
       return;
     }
     clearTimeout(resizeTimer);
@@ -149,11 +228,25 @@ export function createSimApp(root) {
   let lastFrameTime = 0;
   let elapsed = 0;
 
+  const smoothIdleTowardTargets = (dt) => {
+    const alpha = 1 - Math.exp(-dt / IDLE_TARGET_SMOOTH_TAU);
+    idleLive.strength += (idleTarget.strength - idleLive.strength) * alpha;
+    idleLive.mix += (idleTarget.mix - idleLive.mix) * alpha;
+    idleLive.speed += (idleTarget.speed - idleLive.speed) * alpha;
+    idleLive.heightCap += (idleTarget.heightCap - idleLive.heightCap) * alpha;
+    causticDriftLive += (causticDriftTarget - causticDriftLive) * alpha;
+    pushIdleToSim();
+  };
+
   const renderFrame = (now) => {
     frameId = requestAnimationFrame(renderFrame);
 
     const dt = Math.min(Math.max((now - lastFrameTime) * 0.001, 0), MAX_FRAME_DT);
     lastFrameTime = now;
+
+    if (ambientWarmupComplete) {
+      smoothIdleTowardTargets(dt);
+    }
 
     accumulator += dt;
     let steps = 0;
@@ -187,7 +280,6 @@ export function createSimApp(root) {
   };
 
   const unbindVisibility = bindVisibility(loop);
-  loop.start();
 
   const panel = createControlPanel({
     root,
@@ -207,6 +299,7 @@ export function createSimApp(root) {
     publicControls,
     dispose() {
       loop.stop();
+      cancelAnimationFrame(warmupFrameId);
       panel.dispose();
       pointer.dispose();
       unbindResize();

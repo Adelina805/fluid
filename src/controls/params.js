@@ -495,9 +495,12 @@ export function deriveRestlessSimCoupling(calmRestless) {
   const rel = (lo, hi) => lerp(lo, hi, cr) / lerp(lo, hi, cr0);
   return {
     strengthMul: rel(0.32, 1.55),
-    mixMul: rel(0.55, 1),
+    /** Narrow swing — strength carries most of the calm↔restless separation. */
+    mixMul: rel(0.88, 1.02),
     speedMul: rel(0.72, 1.18),
     driftMul: rel(0.82, 1.08),
+    /** Calm hits headroom sooner; restless keeps more sustained idle injection. */
+    heightCapMul: rel(0.78, 1.14),
   };
 }
 

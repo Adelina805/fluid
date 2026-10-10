@@ -67,9 +67,11 @@ export function applyIdleParams(material, overrides = {}, motionScale = 1) {
   u.uIdleFineWeight.value = layers === 3 ? d.fineWeight * motionScale : 0;
   u.uIdleHeightCap.value = d.heightCap;
 
-  if (layers === 3) material.defines.IDLE_LAYER3 = '';
+  const wantLayer3 = layers === 3;
+  const hadLayer3 = material.defines.IDLE_LAYER3 !== undefined;
+  if (wantLayer3) material.defines.IDLE_LAYER3 = '';
   else delete material.defines.IDLE_LAYER3;
-  material.needsUpdate = true;
+  if (wantLayer3 !== hadLayer3) material.needsUpdate = true;
 }
 
 /**
