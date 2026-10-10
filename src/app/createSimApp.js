@@ -38,12 +38,6 @@ const RESIZE_DEBOUNCE_MS = 150;
 /** E-folding time for calm↔restless idle retargeting (seconds). */
 const IDLE_TARGET_SMOOTH_TAU = 0.5;
 
-/** Caustic Mode B drift eases slower — abrupt slider moves stay soft on the field. */
-const CAUSTIC_DRIFT_SMOOTH_TAU = 2.8;
-
-/** Max |drift speed| change per second while easing (warp-lattice units / s²). */
-const CAUSTIC_DRIFT_MAX_STEP_PER_S = 0.22;
-
 /**
  * Hidden pre-roll: ~one idle beat of sim steps, spread across rAF with a per-frame GPU budget
  * (avoids a single long synchronous hitch on mobile).
@@ -51,9 +45,6 @@ const CAUSTIC_DRIFT_MAX_STEP_PER_S = 0.22;
 const WARMUP_SIM_SECONDS = 12;
 const WARMUP_FRAME_BUDGET_MS = 10;
 
-/**
- * @param {number} calmRestless
- */
 /**
  * @param {number} calmRestless
  * @param {number} baseDriftSpeed CAUSTIC_COUPLING warp default
@@ -166,6 +157,8 @@ export function createSimApp(root) {
     applyPublicControls(publicControls, params);
     idleTarget = idleTargetsFromSlider(publicControls.calmRestless, baseCausticDriftSpeed);
     causticDriftTarget = baseCausticDriftSpeed * idleTarget.driftMul * motionScale;
+    causticDriftLive = causticDriftTarget;
+    pushIdleToSim();
     viewMesh.userData.syncShadingParams(params);
     scene.background.copy(viewUniforms.uColorDeep.value);
     renderer.setClearColor(viewUniforms.uColorDeep.value, 1);
@@ -245,15 +238,6 @@ export function createSimApp(root) {
     idleLive.mix += (idleTarget.mix - idleLive.mix) * idleAlpha;
     idleLive.speed += (idleTarget.speed - idleLive.speed) * idleAlpha;
     idleLive.heightCap += (idleTarget.heightCap - idleLive.heightCap) * idleAlpha;
-
-    const driftAlpha = 1 - Math.exp(-dt / CAUSTIC_DRIFT_SMOOTH_TAU);
-    let driftStep = (causticDriftTarget - causticDriftLive) * driftAlpha;
-    const driftCap = CAUSTIC_DRIFT_MAX_STEP_PER_S * dt;
-    if (Math.abs(driftStep) > driftCap) {
-      driftStep = Math.sign(driftStep) * driftCap;
-    }
-    causticDriftLive += driftStep;
-
     pushIdleToSim();
   };
 
