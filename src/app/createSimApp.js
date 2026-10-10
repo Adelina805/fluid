@@ -38,6 +38,12 @@ const RESIZE_DEBOUNCE_MS = 150;
 /** E-folding time for calm↔restless idle retargeting (seconds). */
 const IDLE_TARGET_SMOOTH_TAU = 0.5;
 
+/** Caustic Mode B drift eases slower — abrupt slider moves stay soft on the field. */
+const CAUSTIC_DRIFT_SMOOTH_TAU = 2.8;
+
+/** Max |drift speed| change per second while easing (warp-lattice units / s²). */
+const CAUSTIC_DRIFT_MAX_STEP_PER_S = 0.22;
+
 /**
  * Hidden pre-roll: ~one idle beat of sim steps, spread across rAF with a per-frame GPU budget
  * (avoids a single long synchronous hitch on mobile).
@@ -234,12 +240,20 @@ export function createSimApp(root) {
   let elapsed = 0;
 
   const smoothIdleTowardTargets = (dt) => {
-    const alpha = 1 - Math.exp(-dt / IDLE_TARGET_SMOOTH_TAU);
-    idleLive.strength += (idleTarget.strength - idleLive.strength) * alpha;
-    idleLive.mix += (idleTarget.mix - idleLive.mix) * alpha;
-    idleLive.speed += (idleTarget.speed - idleLive.speed) * alpha;
-    idleLive.heightCap += (idleTarget.heightCap - idleLive.heightCap) * alpha;
-    causticDriftLive += (causticDriftTarget - causticDriftLive) * alpha;
+    const idleAlpha = 1 - Math.exp(-dt / IDLE_TARGET_SMOOTH_TAU);
+    idleLive.strength += (idleTarget.strength - idleLive.strength) * idleAlpha;
+    idleLive.mix += (idleTarget.mix - idleLive.mix) * idleAlpha;
+    idleLive.speed += (idleTarget.speed - idleLive.speed) * idleAlpha;
+    idleLive.heightCap += (idleTarget.heightCap - idleLive.heightCap) * idleAlpha;
+
+    const driftAlpha = 1 - Math.exp(-dt / CAUSTIC_DRIFT_SMOOTH_TAU);
+    let driftStep = (causticDriftTarget - causticDriftLive) * driftAlpha;
+    const driftCap = CAUSTIC_DRIFT_MAX_STEP_PER_S * dt;
+    if (Math.abs(driftStep) > driftCap) {
+      driftStep = Math.sign(driftStep) * driftCap;
+    }
+    causticDriftLive += driftStep;
+
     pushIdleToSim();
   };
 
