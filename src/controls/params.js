@@ -545,14 +545,14 @@ export function deriveCausticParams(publicControls) {
   const warp = clamp(CAUSTIC_NET.warp, CAUSTIC_CLAMPS.warp.min, CAUSTIC_CLAMPS.warp.max);
 
   const sharpness = clamp(
-    CAUSTIC_NET.sharpness + dLi * 0.04,
+    CAUSTIC_NET.sharpness,
     CAUSTIC_CLAMPS.sharpness.min,
     CAUSTIC_CLAMPS.sharpness.max,
   );
 
-  // Light = strongest intensity driver.
+  // Light = primary driver (diffuse stays fixed; intensity moves the caustic layer).
   const intensity = clamp(
-    CAUSTIC_NET.intensity + dLi * 0.85,
+    CAUSTIC_NET.intensity + dLi * 1.15,
     CAUSTIC_CLAMPS.intensity.min,
     CAUSTIC_CLAMPS.intensity.max,
   );
@@ -579,7 +579,7 @@ export function applyPublicControls(publicControls, params) {
   const cr = clamp01(publicControls.calmRestless);
   const li = clamp01(publicControls.light);
 
-  const { calmRestless: crR, light: liR } = PUBLIC_RANGES;
+  const { calmRestless: crR } = PUBLIC_RANGES;
   const cr0 = PUBLIC_DEFAULTS.calmRestless;
   const li0 = PUBLIC_DEFAULTS.light;
 
@@ -609,11 +609,12 @@ export function applyPublicControls(publicControls, params) {
   params.fresnelStrength = PARAM_DEFAULTS.fresnelStrength;
   params.colorDepthStrength = PARAM_DEFAULTS.colorDepthStrength;
 
-  params.lightIntensity = lerp(liR.min, liR.max, li);
+  // Approved diffuse baseline — light slider does not scale the whole frame.
+  params.lightIntensity = PARAM_DEFAULTS.lightIntensity;
   params.specularStrength =
-    PARAM_DEFAULTS.specularStrength * rel(li, li0, 0.75, 1.35);
+    PARAM_DEFAULTS.specularStrength * rel(li, li0, 0.58, 1.45);
   params.causticSoftStrength =
-    PARAM_DEFAULTS.causticSoftStrength * rel(li, li0, 0.7, 1.55);
+    PARAM_DEFAULTS.causticSoftStrength * rel(li, li0, 0.55, 1.65);
 
   // Keep highlight exponents at approved defaults (public UI does not expose them).
   params.shininess = PARAM_DEFAULTS.shininess;
