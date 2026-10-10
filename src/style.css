@@ -52,6 +52,9 @@ body {
   --fluid-ui-invalid: rgba(190, 90, 60, 0.75);
   --fluid-ui-radius: 6px;
   --fluid-ui-radius-sm: 4px;
+  --fluid-ui-range-height: 1.5rem;
+  --fluid-ui-range-thumb: 0.75rem;
+  --fluid-ui-range-track: 0.125rem;
 
   position: fixed;
   inset: 0;
@@ -216,7 +219,7 @@ body {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 1.125rem;
+  height: var(--fluid-ui-range-height);
   margin: 0;
   background: transparent;
   cursor: pointer;
@@ -224,31 +227,31 @@ body {
 }
 
 .fluid-ui__range::-webkit-slider-runnable-track {
-  height: 0.125rem;
-  border-radius: 1px;
+  height: var(--fluid-ui-range-track);
+  border-radius: 999px;
   background: var(--fluid-ui-track);
 }
 
 .fluid-ui__range::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 0.625rem;
-  height: 0.625rem;
-  margin-top: -0.25rem;
+  width: var(--fluid-ui-range-thumb);
+  height: var(--fluid-ui-range-thumb);
+  margin-top: calc((var(--fluid-ui-range-track) - var(--fluid-ui-range-thumb)) / 2);
   border-radius: 50%;
   border: 0;
   background: var(--fluid-ui-thumb);
 }
 
 .fluid-ui__range::-moz-range-track {
-  height: 0.125rem;
-  border-radius: 1px;
+  height: var(--fluid-ui-range-track);
+  border-radius: 999px;
   background: var(--fluid-ui-track);
 }
 
 .fluid-ui__range::-moz-range-thumb {
-  width: 0.625rem;
-  height: 0.625rem;
+  width: var(--fluid-ui-range-thumb);
+  height: var(--fluid-ui-range-thumb);
   border-radius: 50%;
   border: 0;
   background: var(--fluid-ui-thumb);
@@ -324,19 +327,14 @@ body {
 }
 
 @media (pointer: coarse) {
-  .fluid-ui__range {
-    height: 1.75rem;
+  .fluid-ui {
+    --fluid-ui-range-height: 2.75rem;
+    --fluid-ui-range-thumb: 1.375rem;
+    --fluid-ui-range-track: 0.25rem;
   }
 
-  .fluid-ui__range::-webkit-slider-thumb {
-    width: 0.875rem;
-    height: 0.875rem;
-    margin-top: -0.375rem;
-  }
-
-  .fluid-ui__range::-moz-range-thumb {
-    width: 0.875rem;
-    height: 0.875rem;
+  .fluid-ui__fields {
+    gap: 0.875rem;
   }
 
   .fluid-ui__close {
