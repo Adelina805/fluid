@@ -432,16 +432,22 @@ function clamp01(t) {
  *
  * warm ↔ cool was rejected in Stage A and is intentionally omitted.
  */
+/** Approved optics at the former glassy↔turbulent default (not public). */
+const APPROVED_OPTICS_RANGE = Object.freeze({
+  turbMin: 0.35,
+  turbMax: 5,
+  distortMin: 0.12,
+  distortMax: 1.35,
+  narrowMin: 0.2,
+  narrowMax: 0.48,
+});
+
+const APPROVED_GLASSY_T = clamp01(
+  inverseLerp(APPROVED_OPTICS_RANGE.turbMin, APPROVED_OPTICS_RANGE.turbMax, PARAM_DEFAULTS.turbulence),
+);
+
 export const PUBLIC_RANGES = Object.freeze({
   calmRestless: { speedMin: 0.25, speedMax: 6, ampMin: 0.7, ampMax: 3.8 },
-  glassyTurbulent: {
-    turbMin: 0.35,
-    turbMax: 5,
-    distortMin: 0.12,
-    distortMax: 1.35,
-    narrowMin: 0.2,
-    narrowMax: 0.48,
-  },
   light: { min: 0.2, max: 1.6 },
 });
 
@@ -452,14 +458,6 @@ export const PUBLIC_DEFAULTS = Object.freeze({
       PUBLIC_RANGES.calmRestless.speedMin,
       PUBLIC_RANGES.calmRestless.speedMax,
       PARAM_DEFAULTS.motionSpeed,
-    ),
-  ),
-  /** 0 = glassy · 1 = turbulent */
-  glassyTurbulent: clamp01(
-    inverseLerp(
-      PUBLIC_RANGES.glassyTurbulent.turbMin,
-      PUBLIC_RANGES.glassyTurbulent.turbMax,
-      PARAM_DEFAULTS.turbulence,
     ),
   ),
   /**
@@ -485,43 +483,44 @@ export function createPublicControls() {
 }
 
 /**
+ * Sim idle + caustic drift multipliers from calm↔restless (1 at public default).
+ * Primary: idle strength; secondary: idle temporal rate; subtle: drift speed.
+ *
+ * @param {number} calmRestless 0–1
+ */
+export function deriveRestlessSimCoupling(calmRestless) {
+  const cr = clamp01(calmRestless);
+  const cr0 = PUBLIC_DEFAULTS.calmRestless;
+  /** @param {number} lo @param {number} hi equals 1 at cr0 */
+  const rel = (lo, hi) => lerp(lo, hi, cr) / lerp(lo, hi, cr0);
+  return {
+    strengthMul: rel(0.32, 1.55),
+    mixMul: rel(0.55, 1),
+    speedMul: rel(0.72, 1.18),
+    driftMul: rel(0.82, 1.08),
+  };
+}
+
+/**
  * Derive fine-caustic params from public semantic axes around the approved baseline.
  * At public defaults every returned value equals CAUSTIC_NET exactly.
+ * Calm↔restless does not move warp/speed (sim-driven motion handles that).
  *
  * @param {ReturnType<typeof createPublicControls>} publicControls
  * @returns {{ intensity: number, scale: number, sharpness: number, warp: number, speed: number }}
  */
 export function deriveCausticParams(publicControls) {
-  const cr = clamp01(publicControls.calmRestless);
-  const gt = clamp01(publicControls.glassyTurbulent);
   const rt = clamp01(publicControls.reflectiveTranslucent);
   const li = clamp01(publicControls.light);
 
-  const dCr = cr - PUBLIC_DEFAULTS.calmRestless;
-  const dGt = gt - PUBLIC_DEFAULTS.glassyTurbulent;
   const dRt = rt - PUBLIC_DEFAULTS.reflectiveTranslucent;
   const dLi = li - PUBLIC_DEFAULTS.light;
 
-  // Calm↔restless: motion only — speed rises with restless; mild warp.
-  const restlessSpan = Math.max(1e-6, 1 - PUBLIC_DEFAULTS.calmRestless);
-  const speed = clamp(
-    CAUSTIC_NET.speed + (Math.max(0, dCr) / restlessSpan) * CAUSTIC_CLAMPS.speed.max,
-    CAUSTIC_CLAMPS.speed.min,
-    CAUSTIC_CLAMPS.speed.max,
-  );
+  const speed = clamp(CAUSTIC_NET.speed, CAUSTIC_CLAMPS.speed.min, CAUSTIC_CLAMPS.speed.max);
+  const warp = clamp(CAUSTIC_NET.warp, CAUSTIC_CLAMPS.warp.min, CAUSTIC_CLAMPS.warp.max);
 
-  // Glassy↔turbulent: strongest structure (warp); mild sharpness.
-  // Calm↔restless adds a small warp contribution.
-  const warp = clamp(
-    CAUSTIC_NET.warp + dCr * 0.08 + dGt * 0.28,
-    CAUSTIC_CLAMPS.warp.min,
-    CAUSTIC_CLAMPS.warp.max,
-  );
-
-  // Glassy = slightly cleaner/higher sharpness; turbulent = slightly softer.
-  // Bright = very mild sharpness lift.
   const sharpness = clamp(
-    CAUSTIC_NET.sharpness - dGt * 0.05 + dLi * 0.04,
+    CAUSTIC_NET.sharpness + dLi * 0.04,
     CAUSTIC_CLAMPS.sharpness.min,
     CAUSTIC_CLAMPS.sharpness.max,
   );
@@ -553,13 +552,11 @@ export function deriveCausticParams(publicControls) {
  */
 export function applyPublicControls(publicControls, params) {
   const cr = clamp01(publicControls.calmRestless);
-  const gt = clamp01(publicControls.glassyTurbulent);
   const rt = clamp01(publicControls.reflectiveTranslucent);
   const li = clamp01(publicControls.light);
 
-  const { calmRestless: crR, glassyTurbulent: gtR, light: liR } = PUBLIC_RANGES;
+  const { calmRestless: crR, light: liR } = PUBLIC_RANGES;
   const cr0 = PUBLIC_DEFAULTS.calmRestless;
-  const gt0 = PUBLIC_DEFAULTS.glassyTurbulent;
   const li0 = PUBLIC_DEFAULTS.light;
 
   /** Relative scale that equals 1 at the public default position. */
@@ -571,9 +568,17 @@ export function applyPublicControls(publicControls, params) {
   params.velocityResponse = rel(cr, cr0, 0.75, 1.4);
   params.rippleStrength = rel(cr, cr0, 0.85, 1.35);
 
-  params.turbulence = lerp(gtR.turbMin, gtR.turbMax, gt);
-  params.distortionStrength = lerp(gtR.distortMin, gtR.distortMax, gt);
-  params.specularNarrowStrength = lerp(gtR.narrowMin, gtR.narrowMax, gt);
+  params.turbulence = lerp(APPROVED_OPTICS_RANGE.turbMin, APPROVED_OPTICS_RANGE.turbMax, APPROVED_GLASSY_T);
+  params.distortionStrength = lerp(
+    APPROVED_OPTICS_RANGE.distortMin,
+    APPROVED_OPTICS_RANGE.distortMax,
+    APPROVED_GLASSY_T,
+  );
+  params.specularNarrowStrength = lerp(
+    APPROVED_OPTICS_RANGE.narrowMin,
+    APPROVED_OPTICS_RANGE.narrowMax,
+    APPROVED_GLASSY_T,
+  );
 
   // Public 0 = reflective → opticalBalance 1; public 1 = translucent → 0.
   params.opticalBalance = 1 - rt;

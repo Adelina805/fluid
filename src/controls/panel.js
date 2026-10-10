@@ -70,21 +70,6 @@ export function createControlPanel({
 
           <label class="fluid-ui__axis">
             <span class="fluid-ui__axis-ends">
-              <span>Glassy</span><span>Turbulent</span>
-            </span>
-            <input
-              type="range"
-              class="fluid-ui__range"
-              data-key="glassyTurbulent"
-              min="0"
-              max="1"
-              step="0.001"
-              aria-label="Glassy to turbulent"
-            />
-          </label>
-
-          <label class="fluid-ui__axis">
-            <span class="fluid-ui__axis-ends">
               <span>Reflective</span><span>Translucent</span>
             </span>
             <input

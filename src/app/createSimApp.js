@@ -9,9 +9,11 @@ import {
   applyPublicControls,
   createParams,
   createPublicControls,
+  deriveRestlessSimCoupling,
 } from '../controls/params.js';
 import { createControlPanel } from '../controls/panel.js';
 import {
+  IDLE_DEFAULTS,
   IDLE_REDUCED_MOTION_SCALE,
 } from '../sim/idleSource.js';
 import {
@@ -96,8 +98,23 @@ export function createSimApp(root) {
   scene.add(viewMesh);
 
   const viewUniforms = viewMesh.material.uniforms;
+  const baseCausticDriftSpeed = CAUSTIC_COUPLING.driftSpeed[CAUSTIC_COUPLING.drift];
   const syncParams = () => {
     applyPublicControls(publicControls, params);
+    const restless = deriveRestlessSimCoupling(publicControls.calmRestless);
+    const idle = IDLE_DEFAULTS;
+    sim.applyIdle(
+      {
+        strength: idle.strength * restless.strengthMul,
+        mix: idle.mix * restless.mixMul,
+        speed: idle.speed * restless.speedMul,
+      },
+      motionScale,
+    );
+    if (viewUniforms.uCausticDriftSpeed) {
+      viewUniforms.uCausticDriftSpeed.value =
+        baseCausticDriftSpeed * restless.driftMul * motionScale;
+    }
     viewMesh.userData.syncShadingParams(params);
     scene.background.copy(viewUniforms.uColorDeep.value);
     renderer.setClearColor(viewUniforms.uColorDeep.value, 1);
