@@ -487,9 +487,9 @@ export function createPublicControls() {
  * Piecewise linear: calm → default → restless so 0 / cr0 / 1 land on the target speeds.
  */
 export const CALM_RESTLESS_DRIFT_SPEED = Object.freeze({
-  calm: 0.02,
-  /** ~4× approved default; upper slider segment uses ease-in so motion ramps into restless. */
-  restless: 0.26,
+  calm: 0.015,
+  /** ~10× approved default; upper slider segment uses ease-in so motion ramps into restless. */
+  restless: 0.6,
 });
 
 /**
