@@ -116,13 +116,13 @@ export const LIGHT = {
  */
 export const CAUSTIC_NET = Object.freeze({
   /** Overall additive strength. */
-  intensity: 1.1,
+  intensity: 1.2,
   /** Spatial density (higher = finer cells). Locked internal — not public. */
-  scale: 2.0,
+  scale: 50.0,
   /** Ridge thinness (lower = sharper/thinner lines). */
-  sharpness: 0.375,
+  sharpness: 1.0,
   /** Domain warp from noise + surface normals. */
-  warp: 0.42,
+  warp: 0.40,
   /** Cell drift / evolution speed (tied to uTime). */
   speed: 0,
 });
