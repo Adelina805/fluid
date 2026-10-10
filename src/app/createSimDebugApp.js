@@ -378,7 +378,7 @@ export function createSimDebugApp(root) {
     step: (count = 1) => {
       sim.advance(count);
       elapsed += count / SIM_STEP_HZ;
-      if (viewUniforms.uTime) viewUniforms.uTime.value = elapsed;
+      syncTimeUniforms();
     },
     /** Dev-only: draw the current state immediately (for scripted captures). */
     render: () => {
@@ -420,6 +420,12 @@ export function createSimDebugApp(root) {
   let lastFrameTime = 0;
   /** Visible seconds (skips hidden time), like the legacy app's `uTime`. */
   let elapsed = 0;
+  function syncTimeUniforms() {
+    if (viewUniforms.uTime) viewUniforms.uTime.value = elapsed;
+    if (viewUniforms.uCausticDriftPhase) {
+      viewUniforms.uCausticDriftPhase.value = elapsed * viewUniforms.uCausticDriftSpeed.value;
+    }
+  }
   let statsClock = 0;
   let framesSinceStats = 0;
   let stepsSinceStats = 0;
@@ -510,7 +516,7 @@ export function createSimDebugApp(root) {
 
     viewUniforms.uState.value = sim.getTexture();
     elapsed += dt;
-    if (viewUniforms.uTime) viewUniforms.uTime.value = elapsed;
+    syncTimeUniforms();
     gpuTimer?.begin('debug');
     viewMesh.userData.prepare?.(renderer, sim.getTexture());
     renderer.render(viewScene, camera);

@@ -150,6 +150,7 @@ function createCausticPath(coupling, causticView, variant) {
       uCausticConc: { value: conc },
       uCausticConcGain: { value: concGain },
       uCausticDriftSpeed: { value: driftSpeed },
+      uCausticDriftPhase: { value: 0 },
       uCausticCurvature: { value: curvature?.texture ?? null },
       uTime: { value: 0 },
       ...createStructureUniforms(variant),

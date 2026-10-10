@@ -39,6 +39,8 @@ uniform sampler2D uCausticCurvature;
 // Drift rate: warp-lattice units / s (mode 1) or orbit cycles / s (mode 2).
 uniform float uCausticDriftSpeed;
 uniform float uTime;
+// Accumulated ∫ speed dt, so retuning the drift rate never jumps the pattern.
+uniform float uCausticDriftPhase;
 
 #ifdef CAUSTIC_FIELD_TEX
 uniform sampler2D uCausticField;
@@ -104,7 +106,7 @@ vec2 causticWorley(vec2 p) {
 #if defined(CAUSTIC_DRIFT) && CAUSTIC_DRIFT == 2
       // Sites shrink toward the cell center to make room for a small orbit; still inside
       // [0, 1], so the 3×3 search stays exact.
-      float phase = uTime * uCausticDriftSpeed + dot(s, vec2(1.7, 2.3));
+      float phase = uCausticDriftPhase + dot(s, vec2(1.7, 2.3));
       vec2 orbit = vec2(causticPsin(phase), causticPsin(phase + 0.25));
       vec2 site = 0.5 + 2.8 * s * (1.0 - 2.0 * abs(s)) + 0.15 * orbit;
 #else
@@ -229,7 +231,7 @@ void causticFieldPrep(
   q = causticLookup(worldXY, tilt, lap, foldScale);
   vec2 warpUv = q * 1.65;
 #if defined(CAUSTIC_DRIFT) && CAUSTIC_DRIFT == 1
-  warpUv += uTime * uCausticDriftSpeed * vec2(0.83, -0.56);
+  warpUv += uCausticDriftPhase * vec2(0.83, -0.56);
 #endif
   vec2 warp = causticNoise2(warpUv) * 2.0 - 1.0;
   p = q * uCausticNetScale + warp * uCausticNetWarp;

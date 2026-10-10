@@ -38,6 +38,9 @@ const RESIZE_DEBOUNCE_MS = 150;
 /** E-folding time for calm↔restless idle retargeting (seconds). */
 const IDLE_TARGET_SMOOTH_TAU = 0.5;
 
+/** E-folding time for caustic drift speed retargeting (seconds). */
+const CAUSTIC_DRIFT_SMOOTH_TAU = 0.25;
+
 /**
  * Hidden pre-roll: ~one idle beat of sim steps, spread across rAF with a per-frame GPU budget
  * (avoids a single long synchronous hitch on mobile).
@@ -157,7 +160,6 @@ export function createSimApp(root) {
     applyPublicControls(publicControls, params);
     idleTarget = idleTargetsFromSlider(publicControls.calmRestless, baseCausticDriftSpeed);
     causticDriftTarget = baseCausticDriftSpeed * idleTarget.driftMul * motionScale;
-    causticDriftLive = causticDriftTarget;
     pushIdleToSim();
     viewMesh.userData.syncShadingParams(params);
     scene.background.copy(viewUniforms.uColorDeep.value);
@@ -238,6 +240,8 @@ export function createSimApp(root) {
     idleLive.mix += (idleTarget.mix - idleLive.mix) * idleAlpha;
     idleLive.speed += (idleTarget.speed - idleLive.speed) * idleAlpha;
     idleLive.heightCap += (idleTarget.heightCap - idleLive.heightCap) * idleAlpha;
+    const driftAlpha = 1 - Math.exp(-dt / CAUSTIC_DRIFT_SMOOTH_TAU);
+    causticDriftLive += (causticDriftTarget - causticDriftLive) * driftAlpha;
     pushIdleToSim();
   };
 
@@ -264,6 +268,7 @@ export function createSimApp(root) {
     viewUniforms.uState.value = sim.getTexture();
     elapsed += dt;
     if (viewUniforms.uTime) viewUniforms.uTime.value = elapsed;
+    if (viewUniforms.uCausticDriftPhase) viewUniforms.uCausticDriftPhase.value += causticDriftLive * dt;
     viewMesh.userData.prepare?.(renderer, sim.getTexture());
     renderer.render(scene, camera);
   };
