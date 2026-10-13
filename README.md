@@ -1,35 +1,48 @@
 # Fluid
 
-An interactive digital study of water, light, and motion.
+An interactive study of water, light, and motion.
 
-**[Live project](https://fluid-three-theta.vercel.app/)** · **[Technical documentation (PROJECT.md)](PROJECT.md)**
+**[Experience Fluid](https://fluid-three-theta.vercel.app/)**
 
-![Fluid on desktop](src/images/current-desktop.png)
+![Fluid on desktop: deep blue water crossed by soft caustic light](src/images/current-desktop.png)
 
-## Overview
+## About
 
-Fluid is a full-screen, top-down view of water that you can touch. There are no goals, scores, or tasks; the surface responds to your pointer or finger, then gradually settles back to calm. The project explores whether a browser interaction can feel calming and tactile without asking the user to accomplish anything.
+Fluid is a little corner of the internet where you can play with water, change how it looks, or just watch it move. The whole screen is the water. Touch it and it responds, then slowly settles back to calm.
 
-## Current implementation
+No goals. No rules. Just water, and a moment to play.
 
-- **GPU water simulation.** The surface is a low-resolution heightfield simulated on the GPU with a damped wave equation, stepped at a fixed 60 Hz using ping-pong half-float render targets. Because the water has persistent state, ripples propagate outward, interfere with each other and with the gentle idle motion, and decay naturally. An absorbing margin outside the visible area keeps waves from bouncing off the screen edges.
-- **Custom GLSL shading.** A full-resolution shader derives normals from the simulated height and applies the palette, depth-based color, soft directional lighting, specular highlights, Fresnel, and subtle refractive distortion.
-- **Procedural caustics.** A Worley-noise caustic network is computed partly at half resolution, bent and brightened by the simulated surface, and slowly drifts over time.
-- **Interaction.** Moving the pointer leaves a wake whose strength follows speed; clicking or tapping drops a ripple. Works with mouse on desktop and single touch on mobile, with portrait-aware framing.
-- **Controls.** A minimal panel, collapsed by default, opens from the corner icon or the `C` key. It offers **Calm ↔ Restless**, **Low light ↔ Bright**, and a **hex color** picker. Settings reset on every visit.
-- **Runtime behavior.** Respects `prefers-reduced-motion`, pauses rendering when the tab is hidden, caps device pixel ratio at 2, and shows a static placeholder if WebGL2 half-float render targets are unavailable.
+## Interaction
+
+Drag across the surface to leave a wake behind you. Tap or click to drop a ripple. Ripples spread, run into each other, and fade on their own. Fluid works with a mouse on desktop and with a finger on a phone, where the view is reframed for portrait.
+
+If you want to change the water, open the small panel in the corner (or press `C`). It has three controls: **Calm ↔ Restless**, **Low light ↔ Bright**, and a color picker. Each visit starts fresh.
 
 <p>
   <img src="src/images/current-mobile.png" alt="Fluid on a phone in portrait" width="240" />
   &nbsp;&nbsp;
-  <img src="src/images/current-controls-panel.png" alt="Fluid controls panel" width="300" />
+  <img src="src/images/current-controls-panel.png" alt="The Fluid controls panel" width="300" />
 </p>
 
-*Left: portrait layout on a phone. Right: the controls panel.*
+## From looking like water to feeling like water
 
-**Built with:** Vite, Three.js, WebGL2, GLSL, and vanilla JavaScript.
+The first version of Fluid looked beautiful, but interacting with it was surprisingly frustrating. Every frame was drawn from scratch, so ripples appeared and disappeared without affecting one another, and the water never quite felt responsive.
 
-## Running locally
+So I rebuilt the core around a GPU simulation. The water now has memory: movement leaves ripples that spread, overlap, and naturally settle. The look, palette, and lighting carried over; only the engine underneath changed. It was a reminder that visual polish and interaction quality aren't always the same thing.
+
+![Pointer drags leaving wakes that keep spreading after the pointer moves on](src/images/e2-drags-desktop.png)
+
+*Each stroke keeps spreading and fading after the pointer has moved on, something the original version couldn't do. The original is still available at `?legacy` for comparison.*
+
+## How it works
+
+- **Responsive water.** The surface is a simulation running on the GPU, so it remembers every interaction. Ripples travel, interfere, and lose energy gradually instead of following a fixed animation.
+- **Light and appearance.** Custom shaders recreate light moving through water: highlights, depth-based color, gentle refraction, and procedural caustic patterns that bend with the surface.
+- **A little room to experiment.** A few simple controls let you adjust the water's movement, lighting, and color without exposing any technical settings.
+
+**Built with:** Three.js, WebGL2, GLSL, Vite, and JavaScript.
+
+## Run locally
 
 Requires Node.js.
 
@@ -40,66 +53,51 @@ npm run build     # production build to dist/
 npm run preview   # serve the production build locally
 ```
 
+## Development history
 
+<details>
+<summary>The original visual phases, from reference photos to caustics</summary>
 
-## Development evolution
+<br />
 
-Fluid was built in visual phases against two reference photographs of pool water, then rebuilt around a GPU simulation once the original approach reached its limits.
+Fluid started from two photographs of pool water and was built up one visual layer at a time.
 
-### Reference water
+**Reference A** (cooler): deep cerulean, navy troughs, a sharp white caustic web.
 
-![Reference A](src/images/water-1.jpg)
+![Reference photo of cool, deep blue pool water](src/images/water-1.jpg)
 
-**Reference A (cooler)** — deep cerulean with navy troughs, sharp white caustic web, a faint ripple.
+**Reference B** (brighter): turquoise and aqua with a denser, softer caustic mesh.
 
-![Reference B](src/images/water-2.jpg)
+![Reference photo of bright turquoise pool water](src/images/water-2.jpg)
 
-**Reference B (brighter)** — turquoise/aqua, denser and softer caustic mesh.
+**Phase 1, basic surface.** Layered sine waves and a flat blue gradient. Calm, but it read like fabric.
 
-### Phase 1 — Basic surface
+![Early surface made of layered sine waves](src/images/phase-1.png)
 
-![Phase 1](src/images/phase-1.png)
+**Phase 2, surface character.** Noise broke up the waves; procedural normals and height-based color made it more organic.
 
-Layered sine-wave displacement with a flat blue/cyan gradient. Calm but reads like fabric.
+![Surface with noise and height-based color](src/images/phase-2.png)
 
-### Phase 2 — Surface character
+**Phase 3, lighting.** Directional light, specular highlights, and soft caustic-like streaks. More depth, but still a little like gel.
 
-![Phase 2](src/images/phase-2.png)
+![Surface with directional lighting and highlights](src/images/phase-3.png)
 
-Noise (FBM) breaks up the sine waves; procedural normals and height-based color make it more organic.
+**Phase 4, Fresnel and optics.** Reflection, translucency, and subtle color distortion gave it a glassier, more liquid look.
 
-### Phase 3 — Lighting
+![Glassier surface with Fresnel and distortion](src/images/phase-4.png)
 
-![Phase 3](src/images/phase-3.png)
+**Phases 5 and 6, interaction and controls.** Pointer wakes, tap ripples, and a first control panel, later reduced to the three controls that ship today.
 
-Directional light, dual-lobe specular, soft caustic-like streaks. Adds depth, but the surface still looks like soft gel.
+![Surface responding to pointer interaction](src/images/phase-5.png)
 
-### Phase 4 — Fresnel + optics
+**Phase 6.5, caustic study.** A dedicated procedural caustic field produced the fine, branching light network seen in the references.
 
-![Phase 4](src/images/phase-4.png)
+![Fine branching caustic network](src/images/phase-6.png)
 
-Fresnel, reflective/translucent balance, subtle color distortion. A more glassy, liquid look.
+From here, the project moved to the GPU simulation described above.
 
-### Phase 5 + 6 — Interaction + controls
+</details>
 
-![Phase 5](src/images/phase-5.png)
+## Documentation
 
-Pointer wakes and tap ripples, plus a first version of the Fluid control panel. Its early axes (calm/restless, glassy/turbulent, reflective/translucent, light, hex color) were later reduced to the three controls that ship today.
-
-### Phase 6.5 — Caustic study
-
-![Phase 6](src/images/phase-6.png)
-
-Dedicated procedural caustic field (domain-warped Worley ridges) that gives the fine, branching light network seen in the references.
-
-### Architectural pivot — GPU simulation
-
-Phases 1–6.5 computed the water as a pure function of position and time: every frame was drawn from scratch, with nothing carried over. That made the look achievable but limited the feel. A touch could not leave a lasting trail, ripples could not travel or interact with one another, and the surface could not settle on its own. Pointer effects were also faint next to the idle waves, and the full-resolution caustics accounted for most of the GPU cost.
-
-The water core was replaced rather than the whole project. Vite, Three.js, the top-down camera, the palette, the lighting ideas, and the control panel concept were kept. The stateless surface and analytic ripples gave way to a low-resolution GPU heightfield simulation, rendered through a full-resolution shading pass, with a cheaper caustic field driven by the simulated surface. The result is water that holds energy, spreads and interferes naturally, and returns to calm gradually, at a lower rendering cost than the original caustics.
-
-![Pointer drags in the GPU simulation](src/images/e2-drags-desktop.png)
-
-*Pointer drags during development of the simulation: each stroke leaves a wake that keeps spreading and fading after the pointer moves on, which the stateless version could not do.*
-
-The legacy procedural version is still available at `?legacy` for comparison. See [PROJECT.md](PROJECT.md) for the full design notes, profiling, and decision log.
+[PROJECT.md](PROJECT.md) holds the full design notes: principles, shader and simulation architecture, profiling, the replacement roadmap, and the decision log.
