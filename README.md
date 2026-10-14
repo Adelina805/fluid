@@ -32,7 +32,7 @@ So I rebuilt the core around a GPU simulation. The water now has memory: movemen
 
 ![Pointer drags leaving wakes that keep spreading after the pointer moves on](src/images/e2-drags-desktop.png)
 
-*Each stroke keeps spreading and fading after the pointer has moved on, something the original version couldn't do. The original is still available at `?legacy` for comparison.*
+*Each stroke keeps spreading and fading after the pointer has moved on, something the original version couldn't do. The original is still available at `?legacy` for comparison. (https://fluid-three-theta.vercel.app/?legacy)*
 
 ## How it works
 
